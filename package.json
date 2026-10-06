@@ -1,0 +1,23 @@
+{
+  "name": "xenoci-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "XenoCI: build on a rented Mac mini M4 with one API key (CLI, MCP server, GitHub Action)",
+  "type": "module",
+  "bin": {
+    "xenoci": "dist/xenoci.mjs",
+    "xenoci-mcp": "dist/xenoci-mcp.mjs"
+  },
+  "files": [
+    "dist/xenoci.mjs",
+    "dist/xenoci-mcp.mjs",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "homepage": "https://xenoci.com"
+}
