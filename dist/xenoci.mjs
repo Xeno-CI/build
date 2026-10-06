@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.5KwoGJQN7G/cli/xenoci.mjs
+// ../../../tmp/tmp.5AHENdj5pN/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
-// ../../../tmp/tmp.5KwoGJQN7G/cli/lib.mjs
+// ../../../tmp/tmp.5AHENdj5pN/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -302,9 +302,9 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.5KwoGJQN7G/cli/xenoci.mjs
-var VERSION = "1.1.0";
-var USAGE = `xenoci 1.1.0
+// ../../../tmp/tmp.5AHENdj5pN/cli/xenoci.mjs
+var VERSION = "1.1.1";
+var USAGE = `xenoci 1.1.1
 사용법:
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
@@ -405,8 +405,12 @@ async function main() {
     body.repo_url = options["repo-url"];
   else {
     const dir = options.dir || ".";
-    const up = await client.upload(dir, { project: options.project, onProgress: (p) => process.stderr.write(`\r업로드 ${(p.sent / 1048576).toFixed(1)}/${(p.total / 1048576).toFixed(1)}MB`) });
-    if (up.sent_files)
+    const tty = Boolean(process.stderr.isTTY);
+    const up = await client.upload(dir, { project: options.project, onProgress: (p) => {
+      if (tty)
+        process.stderr.write(`\r업로드 ${(p.sent / 1048576).toFixed(1)}/${(p.total / 1048576).toFixed(1)}MB`);
+    } });
+    if (up.sent_files && tty)
       process.stderr.write(`
 `);
     console.error(`업로드: 파일 ${up.files}개 중 ${up.sent_files}개 전송 (${(up.sent_bytes / 1048576).toFixed(1)}MB, 압축 후 ${(up.wire_bytes / 1048576).toFixed(1)}MB, ${((up.hash_ms + up.upload_ms) / 1000).toFixed(1)}초)`);

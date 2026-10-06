@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.5KwoGJQN7G/cli/lib.mjs
+// ../../../tmp/tmp.5AHENdj5pN/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -329,7 +329,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.5KwoGJQN7G/mcp/server.mjs
+// ../../../tmp/tmp.5AHENdj5pN/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -472,5 +472,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.5KwoGJQN7G/mcp/bin.mjs
+// ../../../tmp/tmp.5AHENdj5pN/mcp/bin.mjs
 startServer();
