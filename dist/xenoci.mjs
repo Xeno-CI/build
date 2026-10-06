@@ -341,7 +341,14 @@ async function main() {
   }
   if (command !== "build" || !options.script)
     throw new Error(USAGE);
-  const body = { script: await readFile(options.script, "utf8") };
+  const gitSource = Boolean(options.repo || options["repo-url"]);
+  const localScript = await readFile(options.script, "utf8").catch((error) => {
+    if (gitSource && error.code === "ENOENT")
+      return null;
+    throw new Error(error.code === "ENOENT" ? `스크립트 파일이 없습니다: ${options.script}` : error.message);
+  });
+  const body = { script: localScript ?? `bash ${JSON.stringify(options.script.replace(/^\.\//, ""))}
+` };
   for (const [flag, field] of [["xcode", "xcode"], ["ref", "ref"]])
     if (options[flag])
       body[field] = options[flag];
