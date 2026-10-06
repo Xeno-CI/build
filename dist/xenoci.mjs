@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+// ../../../tmp/tmp.5KwoGJQN7G/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
+// ../../../tmp/tmp.5KwoGJQN7G/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -155,8 +157,29 @@ async function gitFiles(root) {
     return null;
   }
 }
+var DEFAULT_IGNORE = [
+  "build/",
+  "*.xcarchive",
+  "*.xcresult",
+  "*.ipa",
+  "*.dSYM",
+  "*.dSYM.zip",
+  "Carthage/Build/",
+  ".gradle/",
+  "__pycache__/",
+  "*.pyc",
+  ".venv/",
+  ".idea/",
+  ".tox/",
+  "fastlane/report.xml",
+  "fastlane/Preview.html",
+  "fastlane/screenshots/",
+  "fastlane/test_output/"
+];
 async function walkFiles(root) {
   const out = [];
+  const base = fs.existsSync(path.join(root, ".gitignore")) ? [] : [{ base: "", rules: parseGitignore(DEFAULT_IGNORE.join(`
+`)) }];
   async function walk(dir, rel, stack) {
     let rules = stack;
     const ignoreFile = path.join(dir, ".gitignore");
@@ -173,7 +196,7 @@ async function walkFiles(root) {
         out.push(childRel);
     }
   }
-  await walk(root, "", []);
+  await walk(root, "", base);
   return out;
 }
 async function listFiles(root) {
@@ -279,13 +302,18 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-var USAGE = `사용법:
-  xenoci build --script ./ci.sh [--wait]            현재 폴더를 올려 빌드 (두 번째부터 바뀐 파일만)
+// ../../../tmp/tmp.5KwoGJQN7G/cli/xenoci.mjs
+var VERSION = "1.1.0";
+var USAGE = `xenoci 1.1.0
+사용법:
+  xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
+                                                    (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
   xenoci build --script ./ci.sh --dir ./app         지정한 폴더를 올려 빌드
   xenoci build --script ./ci.sh --repo owner/name --ref main [--github-token-env GITHUB_TOKEN]
   xenoci build --script ./ci.sh --repo-url https://gitlab.com/group/app --ref main
-  옵션: --xcode 26.6 --timeout 30 --priority high --clean
-  xenoci rentals | pool | status <id> | logs <id> | cancel <id>
+  옵션: --xcode 26.6 --timeout 30 --priority high --clean --no-wait(접수만 하고 ID 출력)
+  xenoci rentals | pool | status <id> | logs <id> [--wait] | cancel <id>
+  기다리는 중 Ctrl+C·CI 중단(SIGTERM)이면 빌드도 취소합니다.
 환경 변수: XENOCI_API_KEY (필수), XENOCI_API_URL (기본 https://app.xenoci.com)`;
 function parse(argv) {
   const [command, ...args] = argv;
@@ -296,7 +324,7 @@ function parse(argv) {
       continue;
     }
     const name = args[i].slice(2);
-    if (["wait", "clean", "help"].includes(name)) {
+    if (["wait", "no-wait", "clean", "help"].includes(name)) {
       options[name] = true;
       continue;
     }
@@ -310,6 +338,10 @@ async function main() {
   const { command, options } = parse(process.argv.slice(2));
   if (!command || options.help || ["help", "--help", "-h"].includes(command)) {
     console.log(USAGE);
+    return 0;
+  }
+  if (["version", "--version", "-v"].includes(command)) {
+    console.log(typeof VERSION === "string" ? VERSION : "dev");
     return 0;
   }
   const client = createClient();
@@ -384,9 +416,19 @@ async function main() {
   if (!submitted.id)
     throw new Error("빌드 ID가 없습니다");
   console.error(`빌드 접수: ${submitted.id}`);
-  if (!options.wait) {
+  if (options["no-wait"]) {
     console.log(JSON.stringify({ id: submitted.id, state: submitted.state }));
     return 0;
+  }
+  let stopping = null;
+  for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+    process.on(signal, () => {
+      if (stopping)
+        process.exit(code);
+      console.error(`
+중단 신호를 받아 빌드 ${submitted.id}를 취소합니다`);
+      stopping = client.cancel(submitted.id).catch((error) => console.error(`취소 요청 실패: ${error.message}`)).finally(() => process.exit(code));
+    });
   }
   const build = await follow(client, submitted.id, { onLog: (t) => process.stdout.write(t) });
   console.error(`빌드 ${build.state}${Number.isInteger(build.exit_code) ? ` (종료 코드 ${build.exit_code})` : ""}`);

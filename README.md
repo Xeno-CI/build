@@ -19,13 +19,25 @@ jobs:
           script: ./ci.sh
 ```
 
-## CLI
+## CLI (Jenkins · GitLab · Bitbucket · CircleCI · Buildkite · 셸 · git 없는 폴더)
+
+Node 없이 쓰는 실행 파일 하나입니다. 설치 스크립트가 SHA256SUMS로 체크섬을 확인합니다.
 
 ```sh
+curl -fsSL https://github.com/Xeno-CI/build/releases/latest/download/install.sh | sh
 export XENOCI_API_KEY=...
-npx github:xeno-ci/build build --script ./ci.sh --wait
-npx github:xeno-ci/build --help
+xenoci build --script ./ci.sh      # 현재 폴더 업로드 → 빌드 → 로그 → 빌드 종료 코드로 끝남
 ```
+
+Windows (PowerShell):
+
+```powershell
+irm https://github.com/Xeno-CI/build/releases/latest/download/install.ps1 | iex
+```
+
+Node가 있으면 `npx github:xeno-ci/build build --script ./ci.sh`도 같습니다. `--no-wait`는 접수만 하고 빌드 ID를 출력합니다. 작업을 중단(Ctrl+C·SIGTERM)하면 빌드도 취소됩니다.
+
+CI별 예시와 curl만 쓰는 방법: https://xenoci.com/docs/ci
 
 ## MCP (Claude Code · Cursor)
 

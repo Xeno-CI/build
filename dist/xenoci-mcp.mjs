@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createRequire } from "node:module";
 var __defProp = Object.defineProperty;
 var __returnValue = (v) => v;
 function __exportSetter(name, newValue) {
@@ -15,11 +14,12 @@ var __export = (target, all) => {
     });
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
-var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
+// ../../../tmp/tmp.5KwoGJQN7G/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
+  DEFAULT_IGNORE: () => DEFAULT_IGNORE,
   UPLOAD_MAX_BYTES: () => UPLOAD_MAX_BYTES,
   buildManifest: () => buildManifest,
   createClient: () => createClient,
@@ -179,6 +179,8 @@ async function gitFiles(root) {
 }
 async function walkFiles(root) {
   const out = [];
+  const base = fs.existsSync(path.join(root, ".gitignore")) ? [] : [{ base: "", rules: parseGitignore(DEFAULT_IGNORE.join(`
+`)) }];
   async function walk(dir, rel, stack) {
     let rules = stack;
     const ignoreFile = path.join(dir, ".gitignore");
@@ -195,7 +197,7 @@ async function walkFiles(root) {
         out.push(childRel);
     }
   }
-  await walk(root, "", []);
+  await walk(root, "", base);
   return out;
 }
 async function listFiles(root) {
@@ -299,18 +301,38 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
   ALWAYS_EXCLUDED = [".git", "DerivedData", "Pods", "node_modules", ".build", ".swiftpm", "xcuserdata", ".DS_Store", ".xeno"];
   BATCH_BYTES = 32 * 1024 * 1024;
   TERMINAL = ["succeeded", "failed", "cancelled", "expired"];
+  DEFAULT_IGNORE = [
+    "build/",
+    "*.xcarchive",
+    "*.xcresult",
+    "*.ipa",
+    "*.dSYM",
+    "*.dSYM.zip",
+    "Carthage/Build/",
+    ".gradle/",
+    "__pycache__/",
+    "*.pyc",
+    ".venv/",
+    ".idea/",
+    ".tox/",
+    "fastlane/report.xml",
+    "fastlane/Preview.html",
+    "fastlane/screenshots/",
+    "fastlane/test_output/"
+  ];
 });
 
+// ../../../tmp/tmp.5KwoGJQN7G/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
-var lib = await Promise.resolve().then(() => (init_lib(), exports_lib)).catch(() => import("xenoci/lib.mjs"));
+var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
 var { createClient: createClient2, follow: follow2, exitCodeOf: exitCodeOf2 } = lib;
 var LOG_TAIL = 20000;
 var tools = [
@@ -450,4 +472,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
+// ../../../tmp/tmp.5KwoGJQN7G/mcp/bin.mjs
 startServer();
