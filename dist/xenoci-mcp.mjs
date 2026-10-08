@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.5nOYGoWw7v/cli/lib.mjs
+// ../../../tmp/tmp.H2EvQNWTmr/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -27,6 +27,7 @@ __export(exports_lib, {
   buildManifest: () => buildManifest,
   createClient: () => createClient,
   defaultProject: () => defaultProject,
+  detectBuildMeta: () => detectBuildMeta,
   exitCodeOf: () => exitCodeOf,
   failureExcerpt: () => failureExcerpt,
   follow: () => follow,
@@ -342,6 +343,32 @@ async function buildManifest(root) {
   manifest.sort((a, b) => a.path < b.path ? -1 : 1);
   return { files: manifest, total };
 }
+async function detectBuildMeta(dir, explicit = {}, env = process.env) {
+  const prOf = (value) => {
+    const m = /(?:^|\/)([1-9][0-9]*)$/.exec(String(value ?? "").trim());
+    return m ? Number(m[1]) : null;
+  };
+  const shaOf = (value) => /^[0-9a-f]{7,40}$/i.test(String(value ?? "").trim()) ? String(value).trim() : null;
+  let event = null;
+  if (env.GITHUB_EVENT_PATH) {
+    try {
+      event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
+    } catch {
+      event = null;
+    }
+  }
+  const pr = prOf(explicit.pr) ?? prOf(event?.pull_request?.number) ?? prOf(env.CHANGE_ID) ?? prOf(env.CI_MERGE_REQUEST_IID) ?? prOf(env.BUILDKITE_PULL_REQUEST) ?? prOf(env.CIRCLE_PULL_REQUEST) ?? prOf(env.BITRISE_PULL_REQUEST) ?? prOf(env.SYSTEM_PULLREQUEST_PULLREQUESTNUMBER);
+  let commit = shaOf(explicit.commit) ?? shaOf(event?.pull_request?.head?.sha) ?? shaOf(env.GITHUB_SHA) ?? shaOf(env.GIT_COMMIT) ?? shaOf(env.CI_COMMIT_SHA) ?? shaOf(env.BUILDKITE_COMMIT) ?? shaOf(env.CIRCLE_SHA1) ?? shaOf(env.BITRISE_GIT_COMMIT) ?? shaOf(env.BUILD_SOURCEVERSION);
+  if (!commit && dir) {
+    try {
+      commit = shaOf((await run("git", ["-C", dir, "rev-parse", "HEAD"])).stdout);
+    } catch {
+      commit = null;
+    }
+  }
+  const repo = [explicit.repo, env.GITHUB_REPOSITORY].find((v) => /^[\w.-]+\/[\w.-]+$/.test(String(v ?? ""))) ?? null;
+  return { pr, commit, repo };
+}
 function defaultProject(root) {
   const name = path.basename(path.resolve(root)).replace(/[^\w.-]/g, "-").slice(0, 40) || "project";
   return `${name}-${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 6)}`;
@@ -396,7 +423,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.1", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.2", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -434,7 +461,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.5nOYGoWw7v/mcp/server.mjs
+// ../../../tmp/tmp.H2EvQNWTmr/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -508,7 +535,10 @@ var tools = [
       timeout_min: int("Build time limit", { minimum: 1, maximum: 360 }),
       queue_until_rental: { type: "boolean", description: "If you have no Mac yet, keep the build queued until an order becomes ready" },
       clean: { type: "boolean", description: "Discard the source cached on the Mac" },
-      wait: { type: "boolean", default: true }
+      wait: { type: "boolean", default: true },
+      pr: int("Pull request number this build is for; find it later with GET /builds?pr=N (auto from CI variables when omitted)", { minimum: 1 }),
+      commit: str("Commit SHA being built (auto: git rev-parse HEAD in dir, or the CI commit)"),
+      upload_repo: str("GitHub owner/name to label an uploaded folder with (display and ?repo= filter only; not cloned). Auto from GITHUB_REPOSITORY")
     }, ["script"])
   },
   { name: "build_status", description: "Build state (queued with position, running, succeeded, failed, cancelled), exit code, failure summary.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
@@ -687,13 +717,22 @@ async function call(requested, args = {}, client, progress) {
   if (args.clean)
     body.clean_tree = true;
   let upload = null;
+  const dir = path2.resolve(args.dir || process.cwd());
+  const refSha = /^[0-9a-f]{7,40}$/i.test(args.ref || "") ? args.ref : undefined;
+  const meta = await lib.detectBuildMeta(args.repo || args.repo_url ? null : dir, { pr: args.pr, commit: args.commit ?? refSha, repo: args.upload_repo });
+  if (meta.pr != null)
+    body.pr = meta.pr;
+  if (meta.commit)
+    body.commit = meta.commit;
   if (args.repo)
     body.repo = args.repo;
   else if (args.repo_url)
     body.repo_url = args.repo_url;
   else {
-    upload = await client.upload(path2.resolve(args.dir || process.cwd()));
+    upload = await client.upload(dir);
     body.upload_id = upload.upload_id;
+    if (meta.repo)
+      body.repo = meta.repo;
   }
   const submitted = await client.submit(body);
   const uploaded = upload ? { files: upload.files, sent_files: upload.sent_files, sent_mb: +(upload.sent_bytes / 1048576).toFixed(1) } : null;
@@ -770,5 +809,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.5nOYGoWw7v/mcp/bin.mjs
+// ../../../tmp/tmp.H2EvQNWTmr/mcp/bin.mjs
 startServer();

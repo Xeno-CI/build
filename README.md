@@ -19,6 +19,8 @@ jobs:
           script: ./ci.sh
 ```
 
+`pull_request` 이벤트면 PR 번호와 PR head 커밋(GitHub의 임시 merge 커밋이 아니라 PR 브랜치의 실제 커밋)을 빌드에 기록하고 그 커밋을 빌드합니다. `GET /api/ci/v1/builds?pr=번호`로 PR별 빌드를 찾을 수 있습니다.
+
 ## CLI (Jenkins · GitLab · Bitbucket · CircleCI · Buildkite · 셸 · git 없는 폴더)
 
 Node 없이 쓰는 실행 파일 하나입니다. 설치 스크립트가 SHA256SUMS로 체크섬을 확인합니다.
@@ -34,6 +36,8 @@ Windows (PowerShell):
 ```powershell
 irm https://github.com/Xeno-CI/build/releases/latest/download/install.ps1 | iex
 ```
+
+`--pr`·`--commit`을 주지 않으면 CI 변수(GitHub Actions·Jenkins·GitLab·Buildkite·CircleCI·Bitrise·Azure)와 `git rev-parse HEAD`로 PR 번호와 커밋을 자동으로 붙입니다. `--dir`와 `--repo owner/name`을 같이 주면 폴더를 올리고 저장소 이름은 표시·검색용으로만 씁니다.
 
 Node가 있으면 `npx github:xeno-ci/build build --script ./ci.sh`도 같습니다. `--no-wait`는 접수만 하고 빌드 ID를 출력합니다. 작업을 중단(Ctrl+C·SIGTERM)하면 빌드도 취소됩니다.
 

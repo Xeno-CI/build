@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.5nOYGoWw7v/cli/xenoci.mjs
+// ../../../tmp/tmp.H2EvQNWTmr/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
-// ../../../tmp/tmp.5nOYGoWw7v/cli/lib.mjs
+// ../../../tmp/tmp.H2EvQNWTmr/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -59,7 +59,7 @@ function errorDetail(body, text, status) {
   };
 }
 var DEFAULT_API_URL = "https://xenoci.com";
-var CLIENT_VERSION = "1.2.1";
+var CLIENT_VERSION = "1.2.2";
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
     throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
@@ -351,6 +351,32 @@ async function buildManifest(root) {
   manifest.sort((a, b) => a.path < b.path ? -1 : 1);
   return { files: manifest, total };
 }
+async function detectBuildMeta(dir, explicit = {}, env = process.env) {
+  const prOf = (value) => {
+    const m = /(?:^|\/)([1-9][0-9]*)$/.exec(String(value ?? "").trim());
+    return m ? Number(m[1]) : null;
+  };
+  const shaOf = (value) => /^[0-9a-f]{7,40}$/i.test(String(value ?? "").trim()) ? String(value).trim() : null;
+  let event = null;
+  if (env.GITHUB_EVENT_PATH) {
+    try {
+      event = JSON.parse(fs.readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
+    } catch {
+      event = null;
+    }
+  }
+  const pr = prOf(explicit.pr) ?? prOf(event?.pull_request?.number) ?? prOf(env.CHANGE_ID) ?? prOf(env.CI_MERGE_REQUEST_IID) ?? prOf(env.BUILDKITE_PULL_REQUEST) ?? prOf(env.CIRCLE_PULL_REQUEST) ?? prOf(env.BITRISE_PULL_REQUEST) ?? prOf(env.SYSTEM_PULLREQUEST_PULLREQUESTNUMBER);
+  let commit = shaOf(explicit.commit) ?? shaOf(event?.pull_request?.head?.sha) ?? shaOf(env.GITHUB_SHA) ?? shaOf(env.GIT_COMMIT) ?? shaOf(env.CI_COMMIT_SHA) ?? shaOf(env.BUILDKITE_COMMIT) ?? shaOf(env.CIRCLE_SHA1) ?? shaOf(env.BITRISE_GIT_COMMIT) ?? shaOf(env.BUILD_SOURCEVERSION);
+  if (!commit && dir) {
+    try {
+      commit = shaOf((await run("git", ["-C", dir, "rev-parse", "HEAD"])).stdout);
+    } catch {
+      commit = null;
+    }
+  }
+  const repo = [explicit.repo, env.GITHUB_REPOSITORY].find((v) => /^[\w.-]+\/[\w.-]+$/.test(String(v ?? ""))) ?? null;
+  return { pr, commit, repo };
+}
 function defaultProject(root) {
   const name = path.basename(path.resolve(root)).replace(/[^\w.-]/g, "-").slice(0, 40) || "project";
   return `${name}-${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 6)}`;
@@ -406,9 +432,9 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.5nOYGoWw7v/cli/xenoci.mjs
-var VERSION = "1.2.1";
-var USAGE = `xenoci 1.2.1
+// ../../../tmp/tmp.H2EvQNWTmr/cli/xenoci.mjs
+var VERSION = "1.2.2";
+var USAGE = `xenoci 1.2.2
 사용법:
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
@@ -416,6 +442,8 @@ var USAGE = `xenoci 1.2.1
   xenoci build --script ./ci.sh --repo owner/name --ref main [--github-token-env GITHUB_TOKEN]
   xenoci build --script ./ci.sh --repo-url https://gitlab.com/group/app --ref main
   옵션: --xcode 26.6 --timeout 30 --priority high --clean --mac rt_... --queue-until-rental --no-wait(접수만 하고 ID 출력)
+        --pr 12 --commit <sha> (없으면 CI 변수와 git rev-parse HEAD로 자동; 나중에 xenoci·API에서 PR별로 찾음)
+        --dir와 --repo owner/name을 같이 주면 폴더를 올리고 repo는 표시·검색용으로만 씁니다(clone 안 함)
   xenoci status <id> | logs <id> [--wait | --failure | --tail 200] | cancel <id> | wait <id> [--timeout 60]
 
 맥 주문 (결제는 사람이 pay_url에서 합니다):
@@ -686,14 +714,25 @@ ${e.text}
     body.rental_id = options.mac;
   if (options["queue-until-rental"])
     body.queue_until_rental = true;
-  if (options.repo) {
+  const upload = !options.repo || options.dir != null;
+  const refSha = /^[0-9a-f]{7,40}$/i.test(options.ref || "") ? options.ref : undefined;
+  const meta = await detectBuildMeta(upload ? options.dir || "." : null, { pr: options.pr, commit: options.commit ?? refSha, repo: options.repo });
+  if (options.pr != null && meta.pr == null)
+    throw new Error("--pr은 양의 정수(PR 번호)입니다");
+  if (options.commit != null && meta.commit == null)
+    throw new Error("--commit은 7~40자리 커밋 SHA입니다");
+  if (meta.pr != null)
+    body.pr = meta.pr;
+  if (meta.commit)
+    body.commit = meta.commit;
+  if (!upload) {
     body.repo = options.repo;
     const token = options["github-token-env"] ? process.env[options["github-token-env"]] : options["github-token"];
     if (options["github-token-env"] && !token)
       throw new Error(`${options["github-token-env"]} 환경 변수가 비어 있습니다`);
     if (token)
       body.github_token = token;
-  } else if (options["repo-url"])
+  } else if (options["repo-url"] && options.dir == null)
     body.repo_url = options["repo-url"];
   else {
     const dir = options.dir || ".";
@@ -707,6 +746,8 @@ ${e.text}
 `);
     console.error(`업로드: 파일 ${up.files}개 중 ${up.sent_files}개 전송 (${(up.sent_bytes / 1048576).toFixed(1)}MB, 압축 후 ${(up.wire_bytes / 1048576).toFixed(1)}MB, ${((up.hash_ms + up.upload_ms) / 1000).toFixed(1)}초)`);
     body.upload_id = up.upload_id;
+    if (meta.repo)
+      body.repo = meta.repo;
   }
   const submitted = await client.submit(body);
   if (!submitted.id)
