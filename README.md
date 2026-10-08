@@ -63,6 +63,6 @@ codex mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build 
 CLI도 같습니다: `xenoci catalog | order | orders | wait | release | macs | extend | waitlist | secrets | errors | whoami`, 모든 명령 `--json`.
 오류는 `{"error":{"code","message","retryable","next","request_id",...}}` 형식이고 `next`에 다음 요청이 들어 있습니다.
 
-AI용 안내: https://xenoci.com/llms.txt · OpenAPI: https://xenoci.com/openapi.json · 오류 코드: https://xenoci.com/docs/errors
+AI용 안내(llms.txt): https://gist.github.com/001005HS/d6a483152886b14e07bda46e90da304d · OpenAPI: https://xenoci.com/openapi.json · 오류 코드: https://xenoci.com/docs/errors
 
 환경 변수: `XENOCI_API_KEY`(필수), `XENOCI_API_URL`(기본 https://xenoci.com).
