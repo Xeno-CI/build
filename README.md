@@ -41,7 +41,7 @@ irm https://github.com/Xeno-CI/build/releases/latest/download/install.ps1 | iex
 
 Node가 있으면 `npx github:xeno-ci/build build --script ./ci.sh`도 같습니다. `--no-wait`는 접수만 하고 빌드 ID를 출력합니다. 작업을 중단(Ctrl+C·SIGTERM)하면 빌드도 취소됩니다.
 
-CI별 예시와 curl만 쓰는 방법: https://xenoci.com/docs/ci
+curl만 쓰는 방법(REST 예시)과 오류 코드: https://xenoci.com/agent-start.md · https://xenoci.com/docs/errors
 
 ## AI 에이전트 (MCP · Claude Code · Codex · Cursor · 오모)
 
