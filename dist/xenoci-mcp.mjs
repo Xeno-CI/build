@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.pBpgWN7A4w/cli/lib.mjs
+// ../../../tmp/tmp.pJHViUS0uk/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -423,7 +423,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.3", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.4", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -461,7 +461,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.pBpgWN7A4w/mcp/server.mjs
+// ../../../tmp/tmp.pJHViUS0uk/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -634,6 +634,9 @@ async function call(requested, args = {}, client, progress) {
     case "reset_macs":
     case "set_xcode": {
       const xcode = name === "set_xcode";
+      const targets = [args.rental_id, args.all === true || undefined, args.ids?.length ? args.ids : undefined].filter((v) => v !== undefined);
+      if (targets.length !== 1)
+        return text({ error: { code: "invalid_target", message: "Give exactly one of rental_id, ids or all=true", retryable: false, next: [{ action: "list_macs" }] } }, true);
       const opts = { ...xcode ? { version: args.version } : { keep_cache: args.keep_cache === true }, ...args.when ? { when: args.when } : {} };
       if (args.rental_id)
         return text(xcode ? await client.setMacXcode(args.rental_id, opts, args.idempotency_key) : await client.resetMac(args.rental_id, opts, args.idempotency_key));
@@ -809,5 +812,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.pBpgWN7A4w/mcp/bin.mjs
+// ../../../tmp/tmp.pJHViUS0uk/mcp/bin.mjs
 startServer();

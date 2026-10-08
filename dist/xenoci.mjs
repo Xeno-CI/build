@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.pBpgWN7A4w/cli/xenoci.mjs
+// ../../../tmp/tmp.pJHViUS0uk/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
-// ../../../tmp/tmp.pBpgWN7A4w/cli/lib.mjs
+// ../../../tmp/tmp.pJHViUS0uk/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -59,7 +59,7 @@ function errorDetail(body, text, status) {
   };
 }
 var DEFAULT_API_URL = "https://xenoci.com";
-var CLIENT_VERSION = "1.2.3";
+var CLIENT_VERSION = "1.2.4";
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
     throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
@@ -432,9 +432,9 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.pBpgWN7A4w/cli/xenoci.mjs
-var VERSION = "1.2.3";
-var USAGE = `xenoci 1.2.3
+// ../../../tmp/tmp.pJHViUS0uk/cli/xenoci.mjs
+var VERSION = "1.2.4";
+var USAGE = `xenoci 1.2.4
 사용법:
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
