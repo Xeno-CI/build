@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.H2EvQNWTmr/cli/lib.mjs
+// ../../../tmp/tmp.pBpgWN7A4w/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -423,7 +423,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.2", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.3", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -461,7 +461,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.H2EvQNWTmr/mcp/server.mjs
+// ../../../tmp/tmp.pBpgWN7A4w/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -682,7 +682,7 @@ async function call(requested, args = {}, client, progress) {
         } : failureExcerpt2(l.log, lines);
         return text({ id: args.id, state: b.state, exit_code: b.exit_code ?? null, ...b.failure ? { failure: b.failure } : {}, excerpt });
       }
-      const all = String(l.log || "").split(`
+      const all = String(l.log || "").replace(/\n$/, "").split(`
 `);
       return text({ id: args.id, total_lines: all.length, start_line: Math.max(1, all.length - lines + 1), next_offset: l.next_offset, log: all.slice(-lines).join(`
 `) });
@@ -809,5 +809,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.H2EvQNWTmr/mcp/bin.mjs
+// ../../../tmp/tmp.pBpgWN7A4w/mcp/bin.mjs
 startServer();
