@@ -1,0 +1,18 @@
+name: xenoci
+description: Run a Buildkite step on a rented XenoCI Mac (upload the checkout, run the command, stream the log)
+author: https://xenoci.com
+requirements:
+  - bash
+  - curl
+  - jq
+  - tar
+  - gzip
+configuration:
+  properties:
+    xcode:
+      type: string
+    timeout-min:
+      type: integer
+    api-url:
+      type: string
+  additionalProperties: false

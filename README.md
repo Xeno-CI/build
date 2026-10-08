@@ -41,6 +41,9 @@ irm https://github.com/Xeno-CI/build/releases/latest/download/install.ps1 | iex
 
 Node가 있으면 `npx github:xeno-ci/build build --script ./ci.sh`도 같습니다. `--no-wait`는 접수만 하고 빌드 ID를 출력합니다. 작업을 중단(Ctrl+C·SIGTERM)하면 빌드도 취소됩니다.
 
+CLI를 설치하지 않고 쓰는 CI별 예제(파일을 저장소에 그대로 복사, `bash`·`curl`만 필요)는 이 저장소의 [`integrations/`](integrations)에 있습니다:
+[Jenkins](integrations/jenkins) · [GitLab Runner custom executor](integrations/gitlab-executor) · [Buildkite 플러그인](integrations/buildkite-plugin) · [CircleCI](integrations/circleci) · [Bitrise](integrations/bitrise) · [Azure Pipelines](integrations/azure) · [로컬·git hook (sh, PowerShell)](integrations/local)
+
 curl만 쓰는 방법(REST 예시)과 오류 코드: https://xenoci.com/agent-start.md · https://xenoci.com/docs/errors
 
 ## AI 에이전트 (MCP · Claude Code · Codex · Cursor · 오모)

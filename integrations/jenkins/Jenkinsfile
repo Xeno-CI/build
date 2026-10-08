@@ -1,0 +1,17 @@
+pipeline {
+  agent any
+
+  environment {
+    XENOCI_API_URL = 'https://xenoci.com/api/ci/v1'
+  }
+
+  stages {
+    stage('XenoCI build') {
+      steps {
+        withCredentials([string(credentialsId: 'XENOCI_API_KEY', variable: 'XENOCI_API_KEY')]) {
+          sh 'bash integrations/jenkins/xenoci-build.sh'
+        }
+      }
+    }
+  }
+}

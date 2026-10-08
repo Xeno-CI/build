@@ -1,0 +1,3 @@
+.PHONY: xenoci-build
+xenoci-build:
+	sh integrations/local/xenoci-build.sh

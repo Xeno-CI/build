@@ -1,0 +1,16 @@
+version: 2.1
+
+jobs:
+  xenoci-build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - run:
+          name: Build on XenoCI
+          command: bash integrations/circleci/run.sh
+
+workflows:
+  build:
+    jobs:
+      - xenoci-build

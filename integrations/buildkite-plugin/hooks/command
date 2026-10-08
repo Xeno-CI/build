@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Buildkite plugin: run the step on a rented XenoCI Mac instead of the agent.
+# The agent has already checked out the repository (BUILDKITE_BUILD_CHECKOUT_PATH); that folder is uploaded
+# and the step's command runs in it on the Mac. A cancelled job (SIGTERM) cancels the remote build.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+XENOCI_LOG_PREFIX=xenoci-plugin
+XENOCI_API_URL="${BUILDKITE_PLUGIN_XENOCI_API_URL:-${XENOCI_API_URL:-https://xenoci.com}}"
+XENOCI_XCODE="${BUILDKITE_PLUGIN_XENOCI_XCODE:-}"
+XENOCI_TIMEOUT_MIN="${BUILDKITE_PLUGIN_XENOCI_TIMEOUT_MIN:-}"
+source "$ROOT/lib/xenoci.sh"
+script="${BUILDKITE_COMMAND:-}"
+[[ -n "$script" ]] || script="bash ci.sh"
+xenoci_run "${BUILDKITE_BUILD_CHECKOUT_PATH:-$PWD}" "${BUILDKITE_PIPELINE_SLUG:-buildkite}" "$script" \
+  "${BUILDKITE_PULL_REQUEST:-}" "${BUILDKITE_COMMIT:-}"
+case "$XENOCI_OUTCOME" in
+  success) exit 0 ;;
+  build_failure) exit "$XENOCI_EXIT_CODE" ;;
+  *) exit 1 ;;
+esac

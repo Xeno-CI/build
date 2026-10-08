@@ -1,0 +1,13 @@
+format_version: '13'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+workflows:
+  xenoci:
+    title: XenoCI macOS build
+    steps:
+      - script@1:
+          title: Submit build to XenoCI and wait
+          inputs:
+            - content: |-
+                set -eu
+                SCRIPT_DIR="${BITRISE_SOURCE_DIR:-$PWD}/integrations/bitrise"
+                exec bash "$SCRIPT_DIR/run.sh"

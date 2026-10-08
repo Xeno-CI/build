@@ -1,0 +1,26 @@
+trigger:
+  branches:
+    include:
+      - "*"
+
+pr:
+  branches:
+    include:
+      - "*"
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  XENOCI_API_URL: https://xenoci.com
+
+steps:
+  - bash: bash integrations/azure/run.sh
+    displayName: Submit and wait for XenoCI build
+    env:
+      XENOCI_API_KEY: $(XENOCI_API_KEY)
+      XENOCI_API_URL: $(XENOCI_API_URL)
+      BUILD_SOURCESDIRECTORY: $(Build.SourcesDirectory)
+      BUILD_REPOSITORY_NAME: $(Build.Repository.Name)
+      BUILD_SOURCEVERSION: $(Build.SourceVersion)
+      SYSTEM_PULLREQUEST_PULLREQUESTNUMBER: $(System.PullRequest.PullRequestNumber)
