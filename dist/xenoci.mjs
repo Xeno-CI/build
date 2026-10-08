@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.dx52hmJtn9/cli/xenoci.mjs
+// ../../../tmp/tmp.5nOYGoWw7v/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
-// ../../../tmp/tmp.dx52hmJtn9/cli/lib.mjs
+// ../../../tmp/tmp.5nOYGoWw7v/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -59,7 +59,7 @@ function errorDetail(body, text, status) {
   };
 }
 var DEFAULT_API_URL = "https://xenoci.com";
-var CLIENT_VERSION = "1.2.0";
+var CLIENT_VERSION = "1.2.1";
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
     throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
@@ -116,7 +116,13 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     order: (no) => request(`/orders/${id(no)}`),
     createOrder: (body, idempotency = randomUUID()) => request("/orders", { method: "POST", body, idempotency }),
     waitOrder: (no, seconds = 60) => request(`/orders/${id(no)}/wait?timeout=${seconds}`),
-    releaseOrder: (no) => request(`/orders/${id(no)}/release`, { method: "POST" }),
+    rental: (rentalId) => request(`/rentals/${id(rentalId)}`),
+    resetMacs: (body, idempotency) => request("/rentals/reset", { method: "POST", body, idempotency }),
+    resetMac: (rentalId, body = {}, idempotency) => request(`/rentals/${id(rentalId)}/reset`, { method: "POST", body, idempotency }),
+    setXcode: (body, idempotency) => request("/rentals/xcode", { method: "POST", body, idempotency }),
+    setMacXcode: (rentalId, body, idempotency) => request(`/rentals/${id(rentalId)}/xcode`, { method: "POST", body, idempotency }),
+    updateMac: (rentalId, body, idempotency) => request(`/rentals/${id(rentalId)}`, { method: "PATCH", body, idempotency }),
+    job: (jobId) => request(`/jobs/${id(jobId)}`),
     extendQuote: (rentalId, hours) => request(`/rentals/${id(rentalId)}/extend/quote`, { method: "POST", body: { hours } }),
     extend: (rentalId, hours, idempotency = randomUUID()) => request(`/rentals/${id(rentalId)}/extend`, { method: "POST", body: { hours }, idempotency }),
     extendMany: (rentalIds, hours, idempotency = randomUUID()) => request("/rentals/extend", { method: "POST", body: { rental_ids: rentalIds, hours }, idempotency }),
@@ -400,9 +406,9 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.dx52hmJtn9/cli/xenoci.mjs
-var VERSION = "1.2.0";
-var USAGE = `xenoci 1.2.0
+// ../../../tmp/tmp.5nOYGoWw7v/cli/xenoci.mjs
+var VERSION = "1.2.1";
+var USAGE = `xenoci 1.2.1
 사용법:
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
@@ -417,7 +423,10 @@ var USAGE = `xenoci 1.2.0
   xenoci order --tier <id> --hours 24 [--units 1] [--xcode 26.6] [--quote]
   xenoci order <RT-...> | orders [--status awaiting_payment]  주문 상태·결제 링크 | 주문 목록
   xenoci wait <RT-...> [--timeout 60]               결제·준비 완료까지 대기
-  xenoci release <RT-...>                           결제 전 주문 취소(자리 반납)
+  xenoci reset (--all | <rt_...>...) [--keep-cache] [--when after_build|now]   VM 재설정(manage 권한)
+  xenoci xcode (--all | <rt_...>...) --version 27.0 [--when after_build|now]    Xcode 변경(manage 권한)
+  xenoci setup <rt_...> [--xcode 26.6] [--runtimes "iOS 26.6,iOS 26.5"] [--tools fastlane,cocoapods] [--cache keep|drop]
+  xenoci job <op_...>                                작업 상태(queued·running·done·failed)
   xenoci macs                                       빌린 맥·남은 시간·대기열 (예전 이름: rentals, pool)
   xenoci extend <rt_...> [<rt_...>...] --hours 24 [--quote]
   xenoci waitlist [--tier <id> [--units 1] | --leave <id>]
@@ -436,7 +445,7 @@ function parse(argv) {
       continue;
     }
     const name = args[i].slice(2);
-    if (["wait", "no-wait", "clean", "help", "json", "quote", "failure", "queue-until-rental"].includes(name)) {
+    if (["wait", "no-wait", "clean", "help", "json", "quote", "failure", "queue-until-rental", "keep-cache", "all"].includes(name)) {
       options[name] = true;
       continue;
     }
@@ -519,10 +528,36 @@ async function main() {
     payHint(o);
     return 0;
   }
-  if (command === "release") {
+  if (command === "xcode" || command === "reset") {
+    if (!options.all && !options._.length)
+      throw new Error("--all 또는 맥 ID를 입력해 주세요 (xenoci macs로 확인)");
+    if (options.all && options._.length)
+      throw new Error("--all과 맥 ID는 함께 쓸 수 없습니다");
+    if (command === "xcode" && !options.version)
+      throw new Error("--version을 입력해 주세요 (xenoci macs의 xcode_options)");
+    const body2 = { ...options.all ? { all: true } : { ids: options._ }, ...command === "xcode" ? { version: options.version } : { keep_cache: Boolean(options["keep-cache"]) }, ...options.when ? { when: options.when } : {} };
+    const result = command === "xcode" ? await client.setXcode(body2, options["idempotency-key"]) : await client.resetMacs(body2, options["idempotency-key"]);
+    print(result);
+    return result.items?.every((i) => i.result === "accepted") ? 0 : 1;
+  }
+  if (command === "setup") {
     if (!id)
-      throw new Error("주문 번호를 입력해 주세요");
-    print(await client.releaseOrder(id));
+      throw new Error("맥 ID를 입력해 주세요 (xenoci macs로 확인)");
+    const list = (v) => String(v).split(",").map((x) => x.trim()).filter(Boolean);
+    const body2 = {
+      ...options.xcode ? { xcode: options.xcode } : {},
+      ...options.runtimes != null ? { runtimes: list(options.runtimes) } : {},
+      ...options.tools != null ? { tools: list(options.tools) } : {},
+      ...options.cache != null ? { keep_cache: options.cache === "keep" } : {},
+      ...options.when ? { when: options.when } : {}
+    };
+    print(await client.updateMac(id, body2, options["idempotency-key"]));
+    return 0;
+  }
+  if (command === "job") {
+    if (!id)
+      throw new Error("작업 ID(op_…)를 입력해 주세요");
+    print(await client.job(id));
     return 0;
   }
   if (command === "extend") {

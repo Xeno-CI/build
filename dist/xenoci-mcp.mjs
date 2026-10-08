@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.dx52hmJtn9/cli/lib.mjs
+// ../../../tmp/tmp.5nOYGoWw7v/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -128,7 +128,13 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     order: (no) => request(`/orders/${id(no)}`),
     createOrder: (body, idempotency = randomUUID()) => request("/orders", { method: "POST", body, idempotency }),
     waitOrder: (no, seconds = 60) => request(`/orders/${id(no)}/wait?timeout=${seconds}`),
-    releaseOrder: (no) => request(`/orders/${id(no)}/release`, { method: "POST" }),
+    rental: (rentalId) => request(`/rentals/${id(rentalId)}`),
+    resetMacs: (body, idempotency) => request("/rentals/reset", { method: "POST", body, idempotency }),
+    resetMac: (rentalId, body = {}, idempotency) => request(`/rentals/${id(rentalId)}/reset`, { method: "POST", body, idempotency }),
+    setXcode: (body, idempotency) => request("/rentals/xcode", { method: "POST", body, idempotency }),
+    setMacXcode: (rentalId, body, idempotency) => request(`/rentals/${id(rentalId)}/xcode`, { method: "POST", body, idempotency }),
+    updateMac: (rentalId, body, idempotency) => request(`/rentals/${id(rentalId)}`, { method: "PATCH", body, idempotency }),
+    job: (jobId) => request(`/jobs/${id(jobId)}`),
     extendQuote: (rentalId, hours) => request(`/rentals/${id(rentalId)}/extend/quote`, { method: "POST", body: { hours } }),
     extend: (rentalId, hours, idempotency = randomUUID()) => request(`/rentals/${id(rentalId)}/extend`, { method: "POST", body: { hours }, idempotency }),
     extendMany: (rentalIds, hours, idempotency = randomUUID()) => request("/rentals/extend", { method: "POST", body: { rental_ids: rentalIds, hours }, idempotency }),
@@ -390,7 +396,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.0", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.1", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -428,7 +434,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.dx52hmJtn9/mcp/server.mjs
+// ../../../tmp/tmp.5nOYGoWw7v/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -456,7 +462,6 @@ var tools = [
   },
   { name: "order_status", description: "One order: status (awaiting_payment, paid, provisioning, ready, expired, canceled), pay_url, rental_ids. Without order_no lists recent orders (optional status filter).", inputSchema: obj({ order_no: str("Order number RT-..."), status: { type: "string", enum: ["awaiting_payment", "paid", "provisioning", "ready", "expired", "canceled"] } }) },
   { name: "wait_order", description: "Wait until an order is paid and its Macs are ready (or it expires). Long-poll up to timeout_s (max 60); call again while status is not final.", inputSchema: obj({ order_no: str("Order number RT-..."), timeout_s: int("Seconds to wait", { minimum: 0, maximum: 60, default: 60 }) }, ["order_no"]) },
-  { name: "release_order", description: "Cancel an unpaid order and free its reserved Macs. Paid orders cannot be canceled here.", inputSchema: obj({ order_no: str("Order number RT-...") }, ["order_no"]) },
   { name: "list_macs", description: "Rented Macs: id, state, Xcode, remaining_minutes, ends_at, can_extend, current build; plus the build queue.", inputSchema: obj() },
   {
     name: "extend",
@@ -468,12 +473,32 @@ var tools = [
       quote_only: { type: "boolean", description: "Only show the price, create nothing" }
     }, ["hours"])
   },
+  {
+    name: "reset_macs",
+    description: 'Reset the VM of every rented Mac (all=true) or some (ids), or one (rental_id). keep_cache=true only empties the work folder; false (default) makes a new VM (at most once per 10 minutes per Mac). A Mac running a build needs when="after_build" (after it) or "now" (cancel it). Each Mac is accepted or rejected with a reason and a job_id; follow with job_status. Scope manage.',
+    inputSchema: obj({ all: { type: "boolean" }, ids: { type: "array", items: str("Mac id rt_..."), maxItems: 50 }, rental_id: str("one Mac id rt_..."), keep_cache: { type: "boolean" }, when: str("after_build or now", { enum: ["after_build", "now"] }), idempotency_key: str("optional; the same key and input makes one job") })
+  },
+  {
+    name: "set_xcode",
+    description: "Change the Xcode version of every rented Mac (all=true), some (ids) or one (rental_id). A Mac whose tier does not offer the version is rejected alone (reason xcode_not_available, detail.options). Same when/job rules as reset_macs. Scope manage.",
+    inputSchema: obj({ version: str("Xcode version, e.g. 27.0"), all: { type: "boolean" }, ids: { type: "array", items: str("Mac id rt_..."), maxItems: 50 }, rental_id: str("one Mac id rt_..."), when: str("after_build or now", { enum: ["after_build", "now"] }), idempotency_key: str("optional") }, ["version"])
+  },
+  {
+    name: "update_mac",
+    description: "Change one Mac's setup: xcode, runtimes (simulator runtimes), tools, keep_cache. Only values in that Mac's setup_options (list_macs / the catalog). Returns a job_id; follow with job_status. Scope manage.",
+    inputSchema: obj({ rental_id: str("Mac id rt_..."), xcode: str("Xcode version"), runtimes: { type: "array", items: str("e.g. iOS 26.6") }, tools: { type: "array", items: str("tool id, e.g. fastlane") }, keep_cache: { type: "boolean" }, when: str("after_build or now", { enum: ["after_build", "now"] }), idempotency_key: str("optional") }, ["rental_id"])
+  },
+  {
+    name: "job_status",
+    description: "State of a reset / Xcode / setup job: queued (waiting for a build to end), running, done or failed (error, message). While it runs the Mac reads mac_state resetting or updating.",
+    inputSchema: obj({ job_id: str("Job id op_...") }, ["job_id"])
+  },
   { name: "join_waitlist", description: "Get notified when a sold-out product is back. leave=true with id removes the entry; no args lists entries.", inputSchema: obj({ tier: str("Product id"), units: int("Number of Macs", { minimum: 1, default: 1 }), id: str("Waitlist entry id (to leave)"), leave: { type: "boolean" } }) },
   {
     name: "build",
     description: "Run a build on a rented Mac. Default uploads dir (only changed files after the first time); or repo+ref / repo_url. wait=true (default) waits and returns state, exit code, failure summary and log tail.",
     inputSchema: obj({
-      script: str("Shell script to run, e.g. xcodebuild -scheme App test"),
+      script: str('Shell commands run on the Mac in the uploaded folder, e.g. "xcodebuild -scheme App test" or "bash ci.sh". "./ci.sh" works only if ci.sh is executable (chmod +x) in the folder; "bash ci.sh" always works.'),
       dir: str("Folder to upload (default: current folder)"),
       repo: str("GitHub owner/name (public)"),
       repo_url: str("Public git https URL"),
@@ -500,7 +525,7 @@ var tools = [
     description: "Build secrets (env vars, masked in logs). action=list returns names only; put sets name=value; delete removes. Values are never returned.",
     inputSchema: obj({ action: { type: "string", enum: ["list", "put", "delete"], default: "list" }, name: str("UPPER_SNAKE name"), value: str("Secret value (put only)") })
   },
-  { name: "account", description: "This API key: account, key name, scopes (read, build, order, secrets, manage), limits and remaining requests/builds/pending orders.", inputSchema: obj() }
+  { name: "account", description: "This API key: account, key name, permission levels (read, build, manage; older keys may also list order and secrets, which manage covers), limits and remaining requests/builds/pending orders.", inputSchema: obj() }
 ];
 var ALIASES = { build_logs: "build_log", list_rentals: "list_macs" };
 var send = (message) => process.stdout.write(JSON.stringify(message) + `
@@ -548,8 +573,6 @@ async function call(requested, args = {}, client, progress) {
       const r = await client.waitOrder(args.order_no, args.timeout_s ?? 60);
       return text(payView(r.order || r));
     }
-    case "release_order":
-      return text(payView(await client.releaseOrder(args.order_no)));
     case "list_macs": {
       const data = await client.rentals();
       return text({ pool: data.pool, [requested === "list_rentals" ? "rentals" : "macs"]: (data.rentals || []).map((r) => ({
@@ -563,7 +586,11 @@ async function call(requested, args = {}, client, progress) {
         can_extend: r.can_extend ?? null,
         extend_deadline_at: r.extend_deadline_at ?? null,
         max_extend_days: r.max_extend_days ?? null,
-        current_build_id: r.current_build_id ?? null
+        current_build_id: r.current_build_id ?? null,
+        mac_state: r.mac_state ?? null,
+        setup: r.setup ?? null,
+        setup_options: r.setup_options ?? null,
+        op: r.op ?? null
       })) });
     }
     case "extend": {
@@ -574,6 +601,22 @@ async function call(requested, args = {}, client, progress) {
         return text(ids.length === 1 ? await client.extendQuote(ids[0], args.hours) : await client.request("/rentals/extend/quote", { method: "POST", body: { rental_ids: ids, hours: args.hours } }));
       return text(payView(ids.length === 1 ? await client.extend(ids[0], args.hours) : await client.extendMany(ids, args.hours)));
     }
+    case "reset_macs":
+    case "set_xcode": {
+      const xcode = name === "set_xcode";
+      const opts = { ...xcode ? { version: args.version } : { keep_cache: args.keep_cache === true }, ...args.when ? { when: args.when } : {} };
+      if (args.rental_id)
+        return text(xcode ? await client.setMacXcode(args.rental_id, opts, args.idempotency_key) : await client.resetMac(args.rental_id, opts, args.idempotency_key));
+      const target = args.all === true ? { all: true } : { ids: args.ids };
+      const result2 = xcode ? await client.setXcode({ ...target, ...opts }, args.idempotency_key) : await client.resetMacs({ ...target, ...opts }, args.idempotency_key);
+      return text(result2, !(result2.items || []).every((item) => item.result === "accepted"));
+    }
+    case "update_mac": {
+      const body2 = Object.fromEntries(["xcode", "runtimes", "tools", "keep_cache", "when"].filter((k) => args[k] !== undefined).map((k) => [k, args[k]]));
+      return text(await client.updateMac(args.rental_id, body2, args.idempotency_key));
+    }
+    case "job_status":
+      return text(await client.job(args.job_id));
     case "join_waitlist": {
       if (args.leave)
         return text(await client.leaveWaitlist(args.id));
@@ -727,5 +770,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.dx52hmJtn9/mcp/bin.mjs
+// ../../../tmp/tmp.5nOYGoWw7v/mcp/bin.mjs
 startServer();
