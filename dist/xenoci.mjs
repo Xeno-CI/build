@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.5AHENdj5pN/cli/xenoci.mjs
+// ../../../tmp/tmp.dx52hmJtn9/cli/xenoci.mjs
 import { readFile } from "node:fs/promises";
 
-// ../../../tmp/tmp.5AHENdj5pN/cli/lib.mjs
+// ../../../tmp/tmp.dx52hmJtn9/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -16,12 +16,56 @@ var UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
 var ALWAYS_EXCLUDED = [".git", "DerivedData", "Pods", "node_modules", ".build", ".swiftpm", "xcuserdata", ".DS_Store", ".xeno"];
 var BATCH_BYTES = 32 * 1024 * 1024;
 var TERMINAL = ["succeeded", "failed", "cancelled", "expired"];
-function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || "https://app.xenoci.com", fetchImpl = fetch } = {}) {
+
+class XenociError extends Error {
+  constructor(status, body, text = "", requestId = null) {
+    const detail = errorDetail(body, text, status);
+    super(`요청 실패: HTTP ${status} ${detail.code}${detail.message && detail.message !== detail.code ? ` — ${detail.message}` : ""}`);
+    this.name = "XenociError";
+    this.status = status;
+    this.code = detail.code;
+    this.envelope = { ...detail, status, request_id: detail.request_id ?? requestId ?? null };
+  }
+}
+function errorDetail(body, text, status) {
+  if (!body || typeof body !== "object") {
+    const plain = /^\s*</.test(String(text)) ? "" : String(text || "").trim().slice(0, 300);
+    return {
+      code: plain && /^[a-z][a-z0-9_]{1,63}$/.test(plain) ? plain : status === 404 ? "not_found" : `http_${status}`,
+      message: plain || null,
+      retryable: status >= 500 || status === 429 ? true : null,
+      retry_after_s: null,
+      fault: status >= 500 ? "platform" : null,
+      next: [],
+      docs: null,
+      request_id: null
+    };
+  }
+  const env = body.error && typeof body.error === "object" ? body.error : body.error_detail && typeof body.error_detail === "object" ? { code: body.error, ...body.error_detail } : null;
+  const code = env?.code ?? (typeof body.error === "string" ? body.error : body.code ?? body.message ?? "error");
+  const isCode = /^[a-z][a-z0-9_]{1,63}$/.test(String(code));
+  const fallback = status === 401 ? "unauthorized" : status === 403 ? "forbidden" : status === 404 ? "not_found" : status === 429 ? "rate_limited" : `http_${status}`;
+  return {
+    code: isCode ? String(code) : fallback,
+    message: env?.message ?? (typeof body.message === "string" ? body.message : isCode ? null : String(code)),
+    retryable: env?.retryable ?? null,
+    retry_after_s: env?.retry_after_s ?? null,
+    fault: env?.fault ?? null,
+    next: Array.isArray(env?.next) ? env.next : [],
+    docs: env?.docs ?? null,
+    request_id: env?.request_id ?? body.request_id ?? null,
+    ...body.items ? { items: body.items } : {},
+    ...env?.failure ? { failure: env.failure } : {}
+  };
+}
+var DEFAULT_API_URL = "https://xenoci.com";
+var CLIENT_VERSION = "1.2.0";
+function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
-    throw new Error("XENOCI_API_KEY를 설정해 주세요");
+    throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
   const base = url.replace(/\/$/, "") + "/api/ci/v1";
   async function request(route, { method = "GET", body, raw, contentType, idempotency } = {}) {
-    const headers = { Authorization: `Bearer ${key}` };
+    const headers = { Authorization: `Bearer ${key}`, "XenoCI-Error-Format": "2", "User-Agent": `xenoci-${agent}/${CLIENT_VERSION}` };
     if (body !== undefined)
       headers["Content-Type"] = "application/json";
     if (raw !== undefined)
@@ -31,12 +75,11 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     const response = await fetchImpl(base + route, { method, headers, body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined) });
     const text = await response.text();
     if (!response.ok) {
-      let code = text;
+      let parsed = null;
       try {
-        const parsed = JSON.parse(text);
-        code = parsed.error || parsed.code || parsed.message || text;
+        parsed = JSON.parse(text);
       } catch {}
-      throw Object.assign(new Error(`요청 실패: HTTP ${response.status} ${code}`), { status: response.status, code });
+      throw new XenociError(response.status, parsed, text, response.headers?.get?.("x-request-id") ?? null);
     }
     if (!text)
       return {};
@@ -46,16 +89,45 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
       return { log: text };
     }
   }
+  const id = (value) => encodeURIComponent(String(value ?? ""));
+  const qs = (query) => {
+    const p = new URLSearchParams;
+    for (const [k, v] of Object.entries(query || {}))
+      if (v != null && v !== "")
+        p.set(k, String(v));
+    const t = p.toString();
+    return t ? `?${t}` : "";
+  };
   return {
     request,
     pool: () => request("/pool"),
     rentals: () => request("/rentals"),
-    build: (id) => request(`/builds/${encodeURIComponent(id)}`),
-    cancel: (id) => request(`/builds/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
-    log: (id, offset = 0) => request(`/builds/${encodeURIComponent(id)}/log?offset=${offset}`),
-    wait: (id, seconds = 2) => request(`/builds/${encodeURIComponent(id)}/wait?timeout=${seconds}`),
+    rental: (rentalId) => request(`/rentals/${id(rentalId)}`),
+    build: (buildId) => request(`/builds/${id(buildId)}`),
+    builds: (query) => request(`/builds${qs(query)}`),
+    cancel: (buildId) => request(`/builds/${id(buildId)}/cancel`, { method: "POST" }),
+    log: (buildId, offset = 0) => request(`/builds/${id(buildId)}/log?offset=${offset}`),
+    wait: (buildId, seconds = 2) => request(`/builds/${id(buildId)}/wait?timeout=${seconds}`),
     submit: (body, idempotency = randomUUID()) => request("/builds", { method: "POST", body, idempotency }),
-    upload: (dir, options) => uploadFolder({ request }, dir, options)
+    upload: (dir, options) => uploadFolder({ request }, dir, options),
+    catalog: () => request("/catalog"),
+    quote: (body) => request("/quote", { method: "POST", body }),
+    orders: (status) => request(`/orders${qs({ status })}`),
+    order: (no) => request(`/orders/${id(no)}`),
+    createOrder: (body, idempotency = randomUUID()) => request("/orders", { method: "POST", body, idempotency }),
+    waitOrder: (no, seconds = 60) => request(`/orders/${id(no)}/wait?timeout=${seconds}`),
+    releaseOrder: (no) => request(`/orders/${id(no)}/release`, { method: "POST" }),
+    extendQuote: (rentalId, hours) => request(`/rentals/${id(rentalId)}/extend/quote`, { method: "POST", body: { hours } }),
+    extend: (rentalId, hours, idempotency = randomUUID()) => request(`/rentals/${id(rentalId)}/extend`, { method: "POST", body: { hours }, idempotency }),
+    extendMany: (rentalIds, hours, idempotency = randomUUID()) => request("/rentals/extend", { method: "POST", body: { rental_ids: rentalIds, hours }, idempotency }),
+    waitlist: () => request("/waitlist"),
+    joinWaitlist: (body) => request("/waitlist", { method: "POST", body }),
+    leaveWaitlist: (entryId) => request(`/waitlist/${id(entryId)}`, { method: "DELETE" }),
+    secrets: () => request("/secrets"),
+    putSecret: (name, value) => request(`/secrets/${id(name)}`, { method: "PUT", body: { value } }),
+    deleteSecret: (name) => request(`/secrets/${id(name)}`, { method: "DELETE" }),
+    account: () => request("/me"),
+    errors: (query) => request(`/errors${qs(query)}`)
   };
 }
 async function follow(client, id, { onLog = () => {}, signal } = {}) {
@@ -76,6 +148,32 @@ async function follow(client, id, { onLog = () => {}, signal } = {}) {
       return build;
     }
   }
+}
+function failureExcerpt(log, lines = 60) {
+  const all = String(log || "").split(`
+`);
+  const patterns = [/^(.+?):(\d+):(?:(\d+):)? (?:fatal )?error: (.*)$/, /error: /i, /\*\* (BUILD|TEST|ARCHIVE) FAILED \*\*/, /^(fatal|error)\b|Error:|FAILED|Traceback|panic:/];
+  let index = -1, match = null;
+  for (const re of patterns) {
+    index = all.findIndex((line) => re.test(line));
+    if (index >= 0) {
+      match = all[index].match(patterns[0]);
+      break;
+    }
+  }
+  if (index < 0)
+    return { found: false, start_line: Math.max(1, all.length - lines + 1), end_line: all.length, text: all.slice(-lines).join(`
+`) };
+  const start = Math.max(0, index - Math.floor(lines / 3)), end = Math.min(all.length, start + lines);
+  return {
+    found: true,
+    start_line: start + 1,
+    end_line: end,
+    error_line: index + 1,
+    ...match ? { file: match[1], line: Number(match[2]), message: match[4] } : { message: all[index].trim() },
+    text: all.slice(start, end).join(`
+`)
+  };
 }
 var exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1;
 function globToRegExp(glob) {
@@ -302,19 +400,33 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.5AHENdj5pN/cli/xenoci.mjs
-var VERSION = "1.1.1";
-var USAGE = `xenoci 1.1.1
+// ../../../tmp/tmp.dx52hmJtn9/cli/xenoci.mjs
+var VERSION = "1.2.0";
+var USAGE = `xenoci 1.2.0
 사용법:
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
   xenoci build --script ./ci.sh --dir ./app         지정한 폴더를 올려 빌드
   xenoci build --script ./ci.sh --repo owner/name --ref main [--github-token-env GITHUB_TOKEN]
   xenoci build --script ./ci.sh --repo-url https://gitlab.com/group/app --ref main
-  옵션: --xcode 26.6 --timeout 30 --priority high --clean --no-wait(접수만 하고 ID 출력)
-  xenoci rentals | pool | status <id> | logs <id> [--wait] | cancel <id>
+  옵션: --xcode 26.6 --timeout 30 --priority high --clean --mac rt_... --queue-until-rental --no-wait(접수만 하고 ID 출력)
+  xenoci status <id> | logs <id> [--wait | --failure | --tail 200] | cancel <id> | wait <id> [--timeout 60]
+
+맥 주문 (결제는 사람이 pay_url에서 합니다):
+  xenoci catalog                                    상품·가격·지금 가능한 대수·Xcode
+  xenoci order --tier <id> --hours 24 [--units 1] [--xcode 26.6] [--quote]
+  xenoci order <RT-...> | orders [--status awaiting_payment]  주문 상태·결제 링크 | 주문 목록
+  xenoci wait <RT-...> [--timeout 60]               결제·준비 완료까지 대기
+  xenoci release <RT-...>                           결제 전 주문 취소(자리 반납)
+  xenoci macs                                       빌린 맥·남은 시간·대기열 (예전 이름: rentals, pool)
+  xenoci extend <rt_...> [<rt_...>...] --hours 24 [--quote]
+  xenoci waitlist [--tier <id> [--units 1] | --leave <id>]
+  xenoci secrets [list | put NAME (값은 표준 입력 또는 --value-env VAR) | delete NAME]
+  xenoci errors [--since 2026-10-08T00:00:00Z] [--code no_capacity] [--fault platform] [--kind api|build]
+  xenoci whoami                                     키 이름·권한(scope)·한도
+  모든 명령: --json (기계가 읽는 JSON 한 개만 출력, 오류도 {"error":{...}} JSON)
   기다리는 중 Ctrl+C·CI 중단(SIGTERM)이면 빌드도 취소합니다.
-환경 변수: XENOCI_API_KEY (필수), XENOCI_API_URL (기본 https://app.xenoci.com)`;
+환경 변수: XENOCI_API_KEY (필수, https://xenoci.com/app/api-keys), XENOCI_API_URL (기본 https://xenoci.com)`;
 function parse(argv) {
   const [command, ...args] = argv;
   const options = { _: [] };
@@ -324,7 +436,7 @@ function parse(argv) {
       continue;
     }
     const name = args[i].slice(2);
-    if (["wait", "no-wait", "clean", "help"].includes(name)) {
+    if (["wait", "no-wait", "clean", "help", "json", "quote", "failure", "queue-until-rental"].includes(name)) {
       options[name] = true;
       continue;
     }
@@ -345,15 +457,139 @@ async function main() {
     return 0;
   }
   const client = createClient();
-  const print = (value) => console.log(JSON.stringify(value, null, 2));
+  const json = Boolean(options.json);
+  const print = (value) => console.log(JSON.stringify(value, null, json ? 0 : 2));
   const id = options._[0];
+  const int = (name, fallback) => {
+    if (options[name] == null)
+      return fallback;
+    const n = Number(options[name]);
+    if (!Number.isInteger(n) || n < 0)
+      throw new Error(`--${name}은 0 이상의 정수입니다`);
+    return n;
+  };
+  const payHint = (order) => {
+    if (!json && order?.pay_url && order.status === "awaiting_payment")
+      console.error(`결제 링크(사람이 열어 동의·결제): ${order.pay_url}`);
+  };
   if (command === "pool") {
     print(await client.pool());
     return 0;
   }
-  if (command === "rentals") {
+  if (command === "rentals" || command === "macs") {
     print(await client.rentals());
     return 0;
+  }
+  if (command === "catalog") {
+    print(await client.catalog());
+    return 0;
+  }
+  if (command === "whoami") {
+    print(await client.account());
+    return 0;
+  }
+  if (command === "orders") {
+    print(await client.orders(options.status));
+    return 0;
+  }
+  if (command === "errors") {
+    print(await client.errors({ since: options.since, code: options.code, fault: options.fault, kind: options.kind }));
+    return 0;
+  }
+  if (command === "order") {
+    if (id) {
+      const o2 = await client.order(id);
+      print(o2);
+      payHint(o2);
+      return 0;
+    }
+    if (!options.tier || !options.hours)
+      throw new Error("--tier와 --hours를 입력해 주세요 (xenoci catalog로 상품 확인)");
+    const body2 = { tier: options.tier, hours: int("hours"), units: int("units", 1) };
+    if (options.quote) {
+      print(await client.quote(body2));
+      return 0;
+    }
+    if (options.xcode)
+      body2.setup = { xcode: options.xcode };
+    if (options.start)
+      body2.start = options.start;
+    const o = await client.createOrder(body2);
+    print(o);
+    payHint(o);
+    return 0;
+  }
+  if (command === "release") {
+    if (!id)
+      throw new Error("주문 번호를 입력해 주세요");
+    print(await client.releaseOrder(id));
+    return 0;
+  }
+  if (command === "extend") {
+    if (!options._.length || !options.hours)
+      throw new Error("맥 ID와 --hours를 입력해 주세요 (xenoci macs로 확인)");
+    const hours = int("hours");
+    if (options.quote) {
+      print(options._.length === 1 ? await client.extendQuote(id, hours) : await client.request("/rentals/extend/quote", { method: "POST", body: { rental_ids: options._, hours } }));
+      return 0;
+    }
+    const o = options._.length === 1 ? await client.extend(id, hours) : await client.extendMany(options._, hours);
+    print(o);
+    payHint(o);
+    return 0;
+  }
+  if (command === "waitlist") {
+    if (options.leave) {
+      print(await client.leaveWaitlist(options.leave));
+      return 0;
+    }
+    if (options.tier) {
+      print(await client.joinWaitlist({ tier: options.tier, units: int("units", 1) }));
+      return 0;
+    }
+    print(await client.waitlist());
+    return 0;
+  }
+  if (command === "secrets") {
+    const [action = "list", name] = options._;
+    if (action === "list") {
+      print(await client.secrets());
+      return 0;
+    }
+    if (!name)
+      throw new Error("시크릿 이름을 입력해 주세요");
+    if (action === "delete") {
+      print(await client.deleteSecret(name));
+      return 0;
+    }
+    if (action !== "put")
+      throw new Error("secrets list | put NAME | delete NAME");
+    let value = options["value-env"] ? process.env[options["value-env"]] : null;
+    if (options["value-env"] && value == null)
+      throw new Error(`${options["value-env"]} 환경 변수가 비어 있습니다`);
+    if (value == null) {
+      const chunks = [];
+      for await (const c of process.stdin)
+        chunks.push(c);
+      value = Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
+    }
+    print(await client.putSecret(name, value));
+    return 0;
+  }
+  if (command === "wait") {
+    if (!id)
+      throw new Error("빌드 ID 또는 주문 번호를 입력해 주세요");
+    const timeout = Math.min(60, int("timeout", 60));
+    if (/^RT-/i.test(id)) {
+      const r2 = await client.waitOrder(id, timeout);
+      print(r2);
+      payHint(r2.order || r2);
+      return 0;
+    }
+    const r = await client.wait(id, timeout);
+    print(r);
+    const b = r.build || r;
+    return ["succeeded", "failed", "cancelled", "expired"].includes(b.state) ? exitCodeOf(b) : 0;
   }
   if (["status", "logs", "cancel"].includes(command) && !id)
     throw new Error("빌드 ID를 입력해 주세요");
@@ -368,7 +604,24 @@ async function main() {
   if (command === "logs") {
     if (options.wait)
       return exitCodeOf(await follow(client, id, { onLog: (t) => process.stdout.write(t) }));
-    process.stdout.write((await client.log(id, 0)).log || "");
+    const log = (await client.log(id, 0)).log || "";
+    if (options.failure) {
+      const e = failureExcerpt(log, int("tail", 60));
+      if (json)
+        print(e);
+      else
+        process.stdout.write(`[${e.start_line}-${e.end_line}줄${e.file ? ` · ${e.file}:${e.line}` : ""}]
+${e.text}
+`);
+      return 0;
+    }
+    const out = options.tail ? log.split(`
+`).slice(-int("tail")).join(`
+`) : log;
+    if (json)
+      print({ id, log: out });
+    else
+      process.stdout.write(out);
     return 0;
   }
   if (command !== "build" || !options.script)
@@ -394,6 +647,10 @@ async function main() {
   }
   if (options.clean)
     body.clean_tree = true;
+  if (options.mac)
+    body.rental_id = options.mac;
+  if (options["queue-until-rental"])
+    body.queue_until_rental = true;
   if (options.repo) {
     body.repo = options.repo;
     const token = options["github-token-env"] ? process.env[options["github-token-env"]] : options["github-token"];
@@ -434,13 +691,31 @@ async function main() {
       stopping = client.cancel(submitted.id).catch((error) => console.error(`취소 요청 실패: ${error.message}`)).finally(() => process.exit(code));
     });
   }
-  const build = await follow(client, submitted.id, { onLog: (t) => process.stdout.write(t) });
+  let tail = "";
+  const build = await follow(client, submitted.id, { onLog: (t) => {
+    if (json) {
+      tail = (tail + t).slice(-200000);
+      process.stderr.write(t);
+    } else
+      process.stdout.write(t);
+  } });
   console.error(`빌드 ${build.state}${Number.isInteger(build.exit_code) ? ` (종료 코드 ${build.exit_code})` : ""}`);
+  if (json)
+    print({ id: submitted.id, state: build.state, exit_code: exitCodeOf(build), ...build.failure ? { failure: build.failure } : {}, ...exitCodeOf(build) !== 0 ? { failure_excerpt: failureExcerpt(tail, 60) } : {} });
   return exitCodeOf(build);
 }
 try {
   process.exitCode = await main();
 } catch (error) {
-  console.error(error.message);
+  if (process.argv.includes("--json"))
+    console.log(JSON.stringify({ error: error.envelope || { code: "client_error", message: error.message, retryable: false, next: [] } }));
+  else {
+    console.error(error.message);
+    const next = error.envelope?.next;
+    if (next?.length)
+      console.error(`다음 할 일: ${next.map((n) => n.action + (n.path ? ` (${n.method || "GET"} ${n.path})` : "")).join(", ")}`);
+    if (error.envelope?.request_id)
+      console.error(`request_id: ${error.envelope.request_id}`);
+  }
   process.exitCode = 1;
 }

@@ -22,7 +22,7 @@ inputs:
     default: normal
   api-url:
     description: API 주소
-    default: https://app.xenoci.com
+    default: https://xenoci.com
 runs:
   using: composite
   steps:
@@ -40,7 +40,7 @@ runs:
         XENO_REF: ${{ github.sha }}
         XENO_ACTION_PATH: ${{ github.action_path }}
       run: |
-        if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다. https://app.xenoci.com/api-keys 에서 키를 만들고 저장소(또는 조직) 시크릿 XENOCI_API_KEY에 넣은 뒤 워크플로의 with: api-key 에 secrets.XENOCI_API_KEY 를 넘겨 주세요."; exit 1; fi
+        if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다. https://xenoci.com/app/api-keys 에서 키를 만들고 저장소(또는 조직) 시크릿 XENOCI_API_KEY에 넣은 뒤 워크플로의 with: api-key 에 secrets.XENOCI_API_KEY 를 넘겨 주세요."; exit 1; fi
         echo "::add-mask::$XENO_GITHUB_TOKEN"
         args=(build --script "$XENO_SCRIPT" --timeout "$XENO_TIMEOUT" --priority "$XENO_PRIORITY" --wait)
         if [ "$XENO_SOURCE" = upload ]; then args+=(--dir "${GITHUB_WORKSPACE:-.}");

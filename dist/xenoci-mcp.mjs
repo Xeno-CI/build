@@ -15,16 +15,20 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.5AHENdj5pN/cli/lib.mjs
+// ../../../tmp/tmp.dx52hmJtn9/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
+  CLIENT_VERSION: () => CLIENT_VERSION,
+  DEFAULT_API_URL: () => DEFAULT_API_URL,
   DEFAULT_IGNORE: () => DEFAULT_IGNORE,
   UPLOAD_MAX_BYTES: () => UPLOAD_MAX_BYTES,
+  XenociError: () => XenociError,
   buildManifest: () => buildManifest,
   createClient: () => createClient,
   defaultProject: () => defaultProject,
   exitCodeOf: () => exitCodeOf,
+  failureExcerpt: () => failureExcerpt,
   follow: () => follow,
   listFiles: () => listFiles,
   parseGitignore: () => parseGitignore,
@@ -37,12 +41,43 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import zlib from "node:zlib";
-function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || "https://app.xenoci.com", fetchImpl = fetch } = {}) {
+function errorDetail(body, text, status) {
+  if (!body || typeof body !== "object") {
+    const plain = /^\s*</.test(String(text)) ? "" : String(text || "").trim().slice(0, 300);
+    return {
+      code: plain && /^[a-z][a-z0-9_]{1,63}$/.test(plain) ? plain : status === 404 ? "not_found" : `http_${status}`,
+      message: plain || null,
+      retryable: status >= 500 || status === 429 ? true : null,
+      retry_after_s: null,
+      fault: status >= 500 ? "platform" : null,
+      next: [],
+      docs: null,
+      request_id: null
+    };
+  }
+  const env = body.error && typeof body.error === "object" ? body.error : body.error_detail && typeof body.error_detail === "object" ? { code: body.error, ...body.error_detail } : null;
+  const code = env?.code ?? (typeof body.error === "string" ? body.error : body.code ?? body.message ?? "error");
+  const isCode = /^[a-z][a-z0-9_]{1,63}$/.test(String(code));
+  const fallback = status === 401 ? "unauthorized" : status === 403 ? "forbidden" : status === 404 ? "not_found" : status === 429 ? "rate_limited" : `http_${status}`;
+  return {
+    code: isCode ? String(code) : fallback,
+    message: env?.message ?? (typeof body.message === "string" ? body.message : isCode ? null : String(code)),
+    retryable: env?.retryable ?? null,
+    retry_after_s: env?.retry_after_s ?? null,
+    fault: env?.fault ?? null,
+    next: Array.isArray(env?.next) ? env.next : [],
+    docs: env?.docs ?? null,
+    request_id: env?.request_id ?? body.request_id ?? null,
+    ...body.items ? { items: body.items } : {},
+    ...env?.failure ? { failure: env.failure } : {}
+  };
+}
+function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
-    throw new Error("XENOCI_API_KEY를 설정해 주세요");
+    throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
   const base = url.replace(/\/$/, "") + "/api/ci/v1";
   async function request(route, { method = "GET", body, raw, contentType, idempotency } = {}) {
-    const headers = { Authorization: `Bearer ${key}` };
+    const headers = { Authorization: `Bearer ${key}`, "XenoCI-Error-Format": "2", "User-Agent": `xenoci-${agent}/${CLIENT_VERSION}` };
     if (body !== undefined)
       headers["Content-Type"] = "application/json";
     if (raw !== undefined)
@@ -52,12 +87,11 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     const response = await fetchImpl(base + route, { method, headers, body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined) });
     const text = await response.text();
     if (!response.ok) {
-      let code = text;
+      let parsed = null;
       try {
-        const parsed = JSON.parse(text);
-        code = parsed.error || parsed.code || parsed.message || text;
+        parsed = JSON.parse(text);
       } catch {}
-      throw Object.assign(new Error(`요청 실패: HTTP ${response.status} ${code}`), { status: response.status, code });
+      throw new XenociError(response.status, parsed, text, response.headers?.get?.("x-request-id") ?? null);
     }
     if (!text)
       return {};
@@ -67,16 +101,45 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
       return { log: text };
     }
   }
+  const id = (value) => encodeURIComponent(String(value ?? ""));
+  const qs = (query) => {
+    const p = new URLSearchParams;
+    for (const [k, v] of Object.entries(query || {}))
+      if (v != null && v !== "")
+        p.set(k, String(v));
+    const t = p.toString();
+    return t ? `?${t}` : "";
+  };
   return {
     request,
     pool: () => request("/pool"),
     rentals: () => request("/rentals"),
-    build: (id) => request(`/builds/${encodeURIComponent(id)}`),
-    cancel: (id) => request(`/builds/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
-    log: (id, offset = 0) => request(`/builds/${encodeURIComponent(id)}/log?offset=${offset}`),
-    wait: (id, seconds = 2) => request(`/builds/${encodeURIComponent(id)}/wait?timeout=${seconds}`),
+    rental: (rentalId) => request(`/rentals/${id(rentalId)}`),
+    build: (buildId) => request(`/builds/${id(buildId)}`),
+    builds: (query) => request(`/builds${qs(query)}`),
+    cancel: (buildId) => request(`/builds/${id(buildId)}/cancel`, { method: "POST" }),
+    log: (buildId, offset = 0) => request(`/builds/${id(buildId)}/log?offset=${offset}`),
+    wait: (buildId, seconds = 2) => request(`/builds/${id(buildId)}/wait?timeout=${seconds}`),
     submit: (body, idempotency = randomUUID()) => request("/builds", { method: "POST", body, idempotency }),
-    upload: (dir, options) => uploadFolder({ request }, dir, options)
+    upload: (dir, options) => uploadFolder({ request }, dir, options),
+    catalog: () => request("/catalog"),
+    quote: (body) => request("/quote", { method: "POST", body }),
+    orders: (status) => request(`/orders${qs({ status })}`),
+    order: (no) => request(`/orders/${id(no)}`),
+    createOrder: (body, idempotency = randomUUID()) => request("/orders", { method: "POST", body, idempotency }),
+    waitOrder: (no, seconds = 60) => request(`/orders/${id(no)}/wait?timeout=${seconds}`),
+    releaseOrder: (no) => request(`/orders/${id(no)}/release`, { method: "POST" }),
+    extendQuote: (rentalId, hours) => request(`/rentals/${id(rentalId)}/extend/quote`, { method: "POST", body: { hours } }),
+    extend: (rentalId, hours, idempotency = randomUUID()) => request(`/rentals/${id(rentalId)}/extend`, { method: "POST", body: { hours }, idempotency }),
+    extendMany: (rentalIds, hours, idempotency = randomUUID()) => request("/rentals/extend", { method: "POST", body: { rental_ids: rentalIds, hours }, idempotency }),
+    waitlist: () => request("/waitlist"),
+    joinWaitlist: (body) => request("/waitlist", { method: "POST", body }),
+    leaveWaitlist: (entryId) => request(`/waitlist/${id(entryId)}`, { method: "DELETE" }),
+    secrets: () => request("/secrets"),
+    putSecret: (name, value) => request(`/secrets/${id(name)}`, { method: "PUT", body: { value } }),
+    deleteSecret: (name) => request(`/secrets/${id(name)}`, { method: "DELETE" }),
+    account: () => request("/me"),
+    errors: (query) => request(`/errors${qs(query)}`)
   };
 }
 async function follow(client, id, { onLog = () => {}, signal } = {}) {
@@ -97,6 +160,32 @@ async function follow(client, id, { onLog = () => {}, signal } = {}) {
       return build;
     }
   }
+}
+function failureExcerpt(log, lines = 60) {
+  const all = String(log || "").split(`
+`);
+  const patterns = [/^(.+?):(\d+):(?:(\d+):)? (?:fatal )?error: (.*)$/, /error: /i, /\*\* (BUILD|TEST|ARCHIVE) FAILED \*\*/, /^(fatal|error)\b|Error:|FAILED|Traceback|panic:/];
+  let index = -1, match = null;
+  for (const re of patterns) {
+    index = all.findIndex((line) => re.test(line));
+    if (index >= 0) {
+      match = all[index].match(patterns[0]);
+      break;
+    }
+  }
+  if (index < 0)
+    return { found: false, start_line: Math.max(1, all.length - lines + 1), end_line: all.length, text: all.slice(-lines).join(`
+`) };
+  const start = Math.max(0, index - Math.floor(lines / 3)), end = Math.min(all.length, start + lines);
+  return {
+    found: true,
+    start_line: start + 1,
+    end_line: end,
+    error_line: index + 1,
+    ...match ? { file: match[1], line: Number(match[2]), message: match[4] } : { message: all[index].trim() },
+    text: all.slice(start, end).join(`
+`)
+  };
 }
 function globToRegExp(glob) {
   let re = "";
@@ -301,13 +390,23 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.0", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
   ALWAYS_EXCLUDED = [".git", "DerivedData", "Pods", "node_modules", ".build", ".swiftpm", "xcuserdata", ".DS_Store", ".xeno"];
   BATCH_BYTES = 32 * 1024 * 1024;
   TERMINAL = ["succeeded", "failed", "cancelled", "expired"];
+  XenociError = class XenociError extends Error {
+    constructor(status, body, text = "", requestId = null) {
+      const detail = errorDetail(body, text, status);
+      super(`요청 실패: HTTP ${status} ${detail.code}${detail.message && detail.message !== detail.code ? ` — ${detail.message}` : ""}`);
+      this.name = "XenociError";
+      this.status = status;
+      this.code = detail.code;
+      this.envelope = { ...detail, status, request_id: detail.request_id ?? requestId ?? null };
+    }
+  };
   DEFAULT_IGNORE = [
     "build/",
     "*.xcarchive",
@@ -329,69 +428,217 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.5AHENdj5pN/mcp/server.mjs
+// ../../../tmp/tmp.dx52hmJtn9/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
-var { createClient: createClient2, follow: follow2, exitCodeOf: exitCodeOf2 } = lib;
+var { createClient: createClient2, follow: follow2, exitCodeOf: exitCodeOf2, XenociError: XenociError2, failureExcerpt: failureExcerpt2 } = lib;
 var LOG_TAIL = 20000;
+var VERSION = lib.CLIENT_VERSION === "dev" ? "0.2.0" : lib.CLIENT_VERSION;
+var PAY_NOTE = "Show pay_url to the user as a link and ask them to open it, sign in with the same account, accept the terms and pay. You cannot pay. Then call wait_order.";
+var str = (description, extra = {}) => ({ type: "string", description, ...extra });
+var int = (description, extra = {}) => ({ type: "integer", description, ...extra });
+var obj = (properties = {}, required = []) => ({ type: "object", properties, required, additionalProperties: false });
+var HOURS = int("Rental length in hours, a multiple of 24 (24 = one 24-hour pass).", { minimum: 24, multipleOf: 24 });
 var tools = [
+  { name: "catalog", description: "Mac products: price per 24h (KRW, VAT incl.), vCPU/RAM, Xcode versions, how many can start now, sales_open. Call first.", inputSchema: obj() },
+  { name: "quote", description: "Price and availability for a new rental before ordering. No side effects.", inputSchema: obj({ tier: str("Product id from catalog.tiers[].id"), units: int("Number of Macs", { minimum: 1, default: 1 }), hours: HOURS }, ["tier", "hours"]) },
+  {
+    name: "create_order",
+    description: `Reserve Macs and get a payment link (status awaiting_payment, hold expires at pay_url_expires_at). ${PAY_NOTE}`,
+    inputSchema: obj({
+      tier: str("Product id from catalog"),
+      units: int("Number of Macs", { minimum: 1, default: 1 }),
+      hours: HOURS,
+      xcode: str("Xcode version from catalog (optional)"),
+      start: str('"now" (default) or an ISO time')
+    }, ["tier", "hours"])
+  },
+  { name: "order_status", description: "One order: status (awaiting_payment, paid, provisioning, ready, expired, canceled), pay_url, rental_ids. Without order_no lists recent orders (optional status filter).", inputSchema: obj({ order_no: str("Order number RT-..."), status: { type: "string", enum: ["awaiting_payment", "paid", "provisioning", "ready", "expired", "canceled"] } }) },
+  { name: "wait_order", description: "Wait until an order is paid and its Macs are ready (or it expires). Long-poll up to timeout_s (max 60); call again while status is not final.", inputSchema: obj({ order_no: str("Order number RT-..."), timeout_s: int("Seconds to wait", { minimum: 0, maximum: 60, default: 60 }) }, ["order_no"]) },
+  { name: "release_order", description: "Cancel an unpaid order and free its reserved Macs. Paid orders cannot be canceled here.", inputSchema: obj({ order_no: str("Order number RT-...") }, ["order_no"]) },
+  { name: "list_macs", description: "Rented Macs: id, state, Xcode, remaining_minutes, ends_at, can_extend, current build; plus the build queue.", inputSchema: obj() },
+  {
+    name: "extend",
+    description: `Extend one or more rented Macs by hours (multiple of 24). One Mac: rental_id. Several: rental_ids (one payment). Returns a pay_url. ${PAY_NOTE}`,
+    inputSchema: obj({
+      rental_id: str("Mac id rt_..."),
+      rental_ids: { type: "array", items: { type: "string" }, description: "Several Mac ids" },
+      hours: HOURS,
+      quote_only: { type: "boolean", description: "Only show the price, create nothing" }
+    }, ["hours"])
+  },
+  { name: "join_waitlist", description: "Get notified when a sold-out product is back. leave=true with id removes the entry; no args lists entries.", inputSchema: obj({ tier: str("Product id"), units: int("Number of Macs", { minimum: 1, default: 1 }), id: str("Waitlist entry id (to leave)"), leave: { type: "boolean" } }) },
   {
     name: "build",
-    description: "XenoCI 임대 macOS VM에서 빌드를 실행합니다. 기본은 폴더 업로드(두 번째부터 바뀐 파일만 전송), repo+ref 또는 repo_url을 주면 git에서 가져옵니다. wait가 true면 끝날 때까지 기다리고 로그 끝부분과 종료 코드를 돌려줍니다.",
-    inputSchema: { type: "object", properties: {
-      script: { type: "string", description: "실행할 셸 스크립트 내용 (예: xcodebuild -scheme App test)" },
-      dir: { type: "string", description: "업로드할 폴더 (기본: 현재 작업 폴더)" },
-      repo: { type: "string", description: "GitHub owner/name (공개 저장소 또는 XenoCI GitHub App 설치 저장소)" },
-      repo_url: { type: "string", description: "공개 저장소 https URL (github.com, gitlab.com, bitbucket.org)" },
-      ref: { type: "string" },
-      xcode: { type: "string" },
-      timeout_min: { type: "integer", minimum: 1, maximum: 360 },
-      clean: { type: "boolean", description: "VM에 남겨 둔 소스를 지우고 처음부터 받기" },
+    description: "Run a build on a rented Mac. Default uploads dir (only changed files after the first time); or repo+ref / repo_url. wait=true (default) waits and returns state, exit code, failure summary and log tail.",
+    inputSchema: obj({
+      script: str("Shell script to run, e.g. xcodebuild -scheme App test"),
+      dir: str("Folder to upload (default: current folder)"),
+      repo: str("GitHub owner/name (public)"),
+      repo_url: str("Public git https URL"),
+      ref: str("Branch, tag or commit"),
+      xcode: str("Xcode version"),
+      rental_id: str("Run on this Mac (default: any free Mac of yours)"),
+      timeout_min: int("Build time limit", { minimum: 1, maximum: 360 }),
+      queue_until_rental: { type: "boolean", description: "If you have no Mac yet, keep the build queued until an order becomes ready" },
+      clean: { type: "boolean", description: "Discard the source cached on the Mac" },
       wait: { type: "boolean", default: true }
-    }, required: ["script"] }
+    }, ["script"])
   },
-  { name: "build_status", description: "빌드 상태(대기 순번, 실행 중, 성공/실패, 종료 코드)를 봅니다.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "build_logs", description: "빌드 로그를 읽습니다. offset부터 이어 읽을 수 있습니다.", inputSchema: { type: "object", properties: { id: { type: "string" }, offset: { type: "integer", minimum: 0 } }, required: ["id"] } },
-  { name: "cancel_build", description: "대기 중이거나 실행 중인 빌드를 취소합니다.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "list_rentals", description: "임대 VM 목록(남은 시간, VM 상태)과 대기열을 봅니다.", inputSchema: { type: "object", properties: {} } }
+  { name: "build_status", description: "Build state (queued with position, running, succeeded, failed, cancelled), exit code, failure summary.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
+  { name: "wait_build", description: "Wait for a build to finish, up to timeout_s (max 60). Call again while state is queued or running.", inputSchema: obj({ id: str("Build id rb_..."), timeout_s: int("Seconds", { minimum: 0, maximum: 60, default: 60 }) }, ["id"]) },
+  {
+    name: "build_log",
+    description: "Read a build log. mode=failure: the lines around the first error (file:line: error); mode=tail: last N lines; mode=range: bytes from offset.",
+    inputSchema: obj({ id: str("Build id rb_..."), mode: { type: "string", enum: ["failure", "tail", "range"], default: "tail" }, lines: int("Lines for tail/failure", { minimum: 1, maximum: 2000, default: 200 }), offset: int("Byte offset for range", { minimum: 0 }) }, ["id"])
+  },
+  { name: "cancel_build", description: "Cancel a queued or running build.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
+  { name: "list_errors", description: "Recent API errors and failed builds of this account with request_id, code and fault (client / customer / platform / payment / capacity / unknown). Platform faults are already reported to XenoCI.", inputSchema: obj({ since: str("ISO time"), code: str("Error code"), fault: { type: "string", enum: ["client", "customer", "platform", "payment", "capacity", "unknown"] }, kind: { type: "string", enum: ["api", "build"] } }) },
+  {
+    name: "secrets",
+    description: "Build secrets (env vars, masked in logs). action=list returns names only; put sets name=value; delete removes. Values are never returned.",
+    inputSchema: obj({ action: { type: "string", enum: ["list", "put", "delete"], default: "list" }, name: str("UPPER_SNAKE name"), value: str("Secret value (put only)") })
+  },
+  { name: "account", description: "This API key: account, key name, scopes (read, build, order, secrets, manage), limits and remaining requests/builds/pending orders.", inputSchema: obj() }
 ];
+var ALIASES = { build_logs: "build_log", list_rentals: "list_macs" };
 var send = (message) => process.stdout.write(JSON.stringify(message) + `
 `);
 var text = (value, isError = false) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }], isError });
-async function call(name, args = {}, client, progress) {
-  if (name === "list_rentals") {
-    const data = await client.rentals();
-    return text({ pool: data.pool, rentals: data.rentals.map((r) => ({
-      id: r.public_id,
-      tier: r.tier,
-      state: r.state,
-      vm_state: r.vm_state,
-      xcode: r.xcode,
-      remaining_minutes: Math.floor(r.remaining_ms / 60000),
-      ends_at: r.ends_at,
-      current_build_id: r.current_build_id
-    })) });
+var minutes = (ms) => Number.isFinite(ms) ? Math.floor(ms / 60000) : null;
+var buildView = (b) => ({
+  id: b.id,
+  state: b.state,
+  exit_code: b.exit_code ?? null,
+  queue_position: b.queue_position ?? null,
+  estimated_start_at: b.estimated_start_at ?? null,
+  rental_id: b.rental_id ?? null,
+  end_reason: b.end_reason ?? null,
+  ...b.failure ? { failure: b.failure } : {},
+  ...b.queue ? { queue: b.queue } : {}
+});
+var payView = (o) => ({
+  order_no: o.order_no,
+  kind: o.kind ?? null,
+  status: o.status,
+  amount_won: o.amount_won,
+  pay_url: o.pay_url ?? null,
+  pay_url_expires_at: o.pay_url_expires_at ?? o.hold_expires_at ?? null,
+  rental_ids: o.rental_ids ?? [],
+  items: o.items ?? null,
+  ...o.refund_status ? { refund_status: o.refund_status } : {},
+  ...o.next ? { next: o.next } : {},
+  ...o.status === "awaiting_payment" ? { next_step: PAY_NOTE } : {}
+});
+async function call(requested, args = {}, client, progress) {
+  const name = ALIASES[requested] || requested;
+  switch (name) {
+    case "catalog":
+      return text(await client.catalog());
+    case "quote":
+      return text(await client.quote({ tier: args.tier, units: args.units ?? 1, hours: args.hours }));
+    case "create_order": {
+      const body2 = { tier: args.tier, units: args.units ?? 1, hours: args.hours, ...args.start ? { start: args.start } : {}, ...args.xcode ? { setup: { xcode: args.xcode } } : {} };
+      return text(payView(await client.createOrder(body2)));
+    }
+    case "order_status":
+      return text(args.order_no ? payView(await client.order(args.order_no)) : { orders: ((await client.orders(args.status)).orders || []).slice(0, 20).map(payView) });
+    case "wait_order": {
+      const r = await client.waitOrder(args.order_no, args.timeout_s ?? 60);
+      return text(payView(r.order || r));
+    }
+    case "release_order":
+      return text(payView(await client.releaseOrder(args.order_no)));
+    case "list_macs": {
+      const data = await client.rentals();
+      return text({ pool: data.pool, [requested === "list_rentals" ? "rentals" : "macs"]: (data.rentals || []).map((r) => ({
+        id: r.public_id || r.id,
+        tier: r.tier,
+        state: r.state,
+        vm_state: r.vm_state,
+        xcode: r.xcode,
+        remaining_minutes: minutes(r.remaining_ms),
+        ends_at: r.ends_at,
+        can_extend: r.can_extend ?? null,
+        extend_deadline_at: r.extend_deadline_at ?? null,
+        max_extend_days: r.max_extend_days ?? null,
+        current_build_id: r.current_build_id ?? null
+      })) });
+    }
+    case "extend": {
+      const ids = args.rental_ids?.length ? args.rental_ids : args.rental_id ? [args.rental_id] : [];
+      if (!ids.length)
+        return text({ error: { code: "invalid_request", message: "rental_id or rental_ids is required", retryable: false, next: [{ action: "list_macs" }] } }, true);
+      if (args.quote_only)
+        return text(ids.length === 1 ? await client.extendQuote(ids[0], args.hours) : await client.request("/rentals/extend/quote", { method: "POST", body: { rental_ids: ids, hours: args.hours } }));
+      return text(payView(ids.length === 1 ? await client.extend(ids[0], args.hours) : await client.extendMany(ids, args.hours)));
+    }
+    case "join_waitlist": {
+      if (args.leave)
+        return text(await client.leaveWaitlist(args.id));
+      if (!args.tier)
+        return text(await client.waitlist());
+      return text(await client.joinWaitlist({ tier: args.tier, units: args.units ?? 1 }));
+    }
+    case "build_status":
+      return text(buildView(await client.build(args.id)));
+    case "wait_build": {
+      const r = await client.wait(args.id, args.timeout_s ?? 60);
+      return text(buildView(r.build || r));
+    }
+    case "build_log": {
+      const mode = args.mode || "tail", lines = args.lines || 200;
+      if (mode === "range") {
+        const l2 = await client.log(args.id, args.offset || 0);
+        return text({ offset: l2.offset, next_offset: l2.next_offset, log: l2.log || "" });
+      }
+      const l = await client.log(args.id, 0);
+      if (mode === "failure") {
+        const b = await client.build(args.id);
+        const range = b.failure?.log_excerpt_lines;
+        const all2 = String(l.log || "").split(`
+`);
+        const excerpt = Array.isArray(range) ? {
+          found: true,
+          start_line: range[0],
+          end_line: range[1],
+          ...b.failure.location ? { file: b.failure.location.file, line: b.failure.location.line } : {},
+          text: all2.slice(Math.max(0, range[0] - 1 - 20), range[1] + 20).join(`
+`)
+        } : failureExcerpt2(l.log, lines);
+        return text({ id: args.id, state: b.state, exit_code: b.exit_code ?? null, ...b.failure ? { failure: b.failure } : {}, excerpt });
+      }
+      const all = String(l.log || "").split(`
+`);
+      return text({ id: args.id, total_lines: all.length, start_line: Math.max(1, all.length - lines + 1), next_offset: l.next_offset, log: all.slice(-lines).join(`
+`) });
+    }
+    case "cancel_build":
+      return text(buildView(await client.cancel(args.id)));
+    case "list_errors":
+      return text(await client.errors({ since: args.since, code: args.code, fault: args.fault, kind: args.kind }));
+    case "secrets": {
+      const action = args.action || "list";
+      if (action === "list")
+        return text(await client.secrets());
+      if (!args.name)
+        return text({ error: { code: "invalid_request", message: "name is required", retryable: false, next: [] } }, true);
+      if (action === "put")
+        return text(await client.putSecret(args.name, args.value));
+      return text(await client.deleteSecret(args.name));
+    }
+    case "account":
+      return text(await client.account());
+    case "build":
+      break;
+    default:
+      throw Object.assign(new Error(`unknown tool ${requested}`), { rpc: -32602 });
   }
-  if (name === "build_status") {
-    const b = await client.build(args.id);
-    return text({ id: b.id, state: b.state, exit_code: b.exit_code, queue_position: b.queue_position, end_reason: b.end_reason });
-  }
-  if (name === "build_logs") {
-    const l = await client.log(args.id, args.offset || 0);
-    return text(`${l.log || ""}
-[next_offset ${l.next_offset}]`);
-  }
-  if (name === "cancel_build") {
-    const b = await client.cancel(args.id);
-    return text({ id: b.id, state: b.state });
-  }
-  if (name !== "build")
-    throw Object.assign(new Error(`unknown tool ${name}`), { rpc: -32602 });
   if (typeof args.script !== "string" || !args.script.trim())
-    return text("script가 필요합니다", true);
+    return text({ error: { code: "invalid_request", message: "script is required", retryable: false, next: [] } }, true);
   const body = { script: args.script };
-  for (const k of ["ref", "xcode", "timeout_min"])
+  for (const k of ["ref", "xcode", "timeout_min", "rental_id", "queue_until_rental"])
     if (args[k] != null)
       body[k] = args[k];
   if (args.clean)
@@ -406,19 +653,27 @@ async function call(name, args = {}, client, progress) {
     body.upload_id = upload.upload_id;
   }
   const submitted = await client.submit(body);
-  const summary = upload ? `업로드: 파일 ${upload.files}개 중 ${upload.sent_files}개 전송 (${(upload.sent_bytes / 1048576).toFixed(1)}MB)
-` : "";
+  const uploaded = upload ? { files: upload.files, sent_files: upload.sent_files, sent_mb: +(upload.sent_bytes / 1048576).toFixed(1) } : null;
   if (args.wait === false)
-    return text(`${summary}빌드 접수: ${submitted.id} (${submitted.state})`);
+    return text({ ...buildView(submitted), upload: uploaded, next_step: "Call wait_build with this id." });
   let log = "";
   const build = await follow2(client, submitted.id, { onLog: (t) => {
     log = (log + t).slice(-LOG_TAIL);
     progress(t);
   } });
   const code = exitCodeOf2(build);
-  return text(`${summary}빌드 ${submitted.id}: ${build.state}, 종료 코드 ${code}
---- 로그 끝부분 ---
-${log}`, code !== 0);
+  const final = await client.build(submitted.id).catch(() => build);
+  const result = { ...buildView({ ...build, ...final }), exit_code: code, upload: uploaded };
+  if (code !== 0)
+    result.failure_excerpt = failureExcerpt2(log, 60);
+  return text(`${JSON.stringify(result, null, 2)}
+--- log tail ---
+${log.slice(-8000)}`, code !== 0);
+}
+function errorResult(error) {
+  if (error instanceof XenociError2 || error?.envelope)
+    return text({ error: error.envelope }, true);
+  return text({ error: { code: "client_error", message: error.message, retryable: false, next: [] } }, true);
 }
 function startServer({ input = process.stdin, client: injected } = {}) {
   let client = injected;
@@ -440,15 +695,14 @@ function startServer({ input = process.stdin, client: injected } = {}) {
         result = {
           protocolVersion: m.params?.protocolVersion || "2025-06-18",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "xenoci", version: "0.1.0" },
-          instructions: "XenoCI 임대 macOS VM에서 빌드합니다. build 도구는 기본적으로 현재 폴더를 올리고(두 번째부터 바뀐 파일만) 결과를 기다립니다."
+          serverInfo: { name: "xenoci", version: VERSION },
+          instructions: "XenoCI rents dedicated Mac mini M4 VMs for builds. Flow: catalog -> create_order -> show pay_url to the user -> wait_order -> build -> on failure build_log mode=failure, fix, build again -> list_macs to see remaining time -> extend (pay_url) if needed. On an error read error.code, error.retryable and error.next. Docs: https://xenoci.com/llms.txt"
         };
       else if (m.method === "ping")
         result = {};
       else if (m.method === "tools/list")
         result = { tools };
       else if (m.method === "tools/call") {
-        client ||= createClient2();
         const token = m.params?._meta?.progressToken;
         let count = 0;
         const progress = (t) => {
@@ -456,11 +710,12 @@ function startServer({ input = process.stdin, client: injected } = {}) {
             send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: ++count, message: t.slice(-500) } });
         };
         try {
-          result = await call(m.params?.name, m.params?.arguments, client, progress);
+          client ||= createClient2({ agent: "mcp" });
+          result = await call(m.params?.name, m.params?.arguments || {}, client, progress);
         } catch (error) {
           if (error.rpc)
             throw error;
-          result = text(error.message, true);
+          result = errorResult(error);
         }
       } else
         throw Object.assign(new Error("method not found"), { rpc: -32601 });
@@ -472,5 +727,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.5AHENdj5pN/mcp/bin.mjs
+// ../../../tmp/tmp.dx52hmJtn9/mcp/bin.mjs
 startServer();
