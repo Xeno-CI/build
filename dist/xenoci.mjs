@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-// ../../../tmp/tmp.pJHViUS0uk/cli/xenoci.mjs
-import { readFile } from "node:fs/promises";
+// ../../../../tmp/tmp.8H0SAuTqNi/cli/xenoci.mjs
+import { readFile as readFile2, writeFile, mkdir } from "node:fs/promises";
+import { createHash as createHash3 } from "node:crypto";
+import path2 from "node:path";
 
-// ../../../tmp/tmp.pJHViUS0uk/cli/lib.mjs
+// ../../../../tmp/tmp.8H0SAuTqNi/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -59,7 +61,7 @@ function errorDetail(body, text, status) {
   };
 }
 var DEFAULT_API_URL = "https://xenoci.com";
-var CLIENT_VERSION = "1.2.4";
+var CLIENT_VERSION = "1.2.5";
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
     throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
@@ -107,6 +109,7 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     builds: (query) => request(`/builds${qs(query)}`),
     cancel: (buildId) => request(`/builds/${id(buildId)}/cancel`, { method: "POST" }),
     log: (buildId, offset = 0) => request(`/builds/${id(buildId)}/log?offset=${offset}`),
+    artifacts: (buildId) => request(`/builds/${id(buildId)}/artifacts`),
     wait: (buildId, seconds = 2) => request(`/builds/${id(buildId)}/wait?timeout=${seconds}`),
     submit: (body, idempotency = randomUUID()) => request("/builds", { method: "POST", body, idempotency }),
     upload: (dir, options) => uploadFolder({ request }, dir, options),
@@ -432,15 +435,265 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../tmp/tmp.pJHViUS0uk/cli/xenoci.mjs
-var VERSION = "1.2.4";
-var USAGE = `xenoci 1.2.4
+// ../../../../tmp/tmp.8H0SAuTqNi/cli/ios.mjs
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
+import { open, readFile, link, unlink } from "node:fs/promises";
+import { resolve, dirname, basename, join } from "node:path";
+var IOS_USAGE = `사용법:
+  xenoci ios capabilities
+  xenoci ios build --app ID --input build.json --idempotency-key KEY
+  xenoci ios sim open --app ID --input simulator.json --idempotency-key KEY
+  xenoci ios sim screenshot --app ID --session ID --idempotency-key KEY
+  xenoci ios sim record start --app ID --session ID --max-seconds 30 --idempotency-key KEY
+  xenoci ios sim record stop --app ID --session ID --recording ID --idempotency-key KEY
+  xenoci ios sim tap --app ID --session ID --sequence N --x X --y Y --idempotency-key KEY
+  xenoci ios job wait ID [--wait-seconds 75]
+  xenoci ios artifact download ID --app ID --output ./capture.png
+공통: --json. XENOCI_API_KEY는 iOS 권한을 받은 계정 키, XENOCI_API_URL은 origin입니다.
+변경은 접수된 job_id를 반환합니다. job wait 종료 코드: 완료 0, 실패 1, 계속 대기 2.
+--input은 capabilities와 인증된 /api/v1/ios/openapi.json의 요청 본문 JSON 파일입니다.
+다운로드는 서버의 bytes/SHA256 검증 후 저장하며 기존 파일을 덮어쓰지 않습니다.`;
+function invalid(message, code = "invalid_argument") {
+  return Object.assign(new Error(message), { envelope: { code, message, retryable: false } });
+}
+var id = (value) => {
+  if (typeof value !== "string" || !/^[A-Z0-9]{24}$/.test(value))
+    throw invalid("24자리 대문자/숫자 리소스 ID가 필요합니다");
+  return value;
+};
+function createIosClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || "https://xenoci.com", fetchImpl = fetch } = {}) {
+  if (!key)
+    throw invalid("XENOCI_API_KEY를 설정해 주세요", "unauthorized");
+  const origin = new URL(url);
+  if (origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/" || origin.protocol !== "https:" && !(origin.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname))) {
+    throw invalid("XENOCI_API_URL은 HTTPS origin이어야 합니다 (로컬 시험은 loopback HTTP 허용)");
+  }
+  const base = origin.origin + "/api/v1/ios";
+  async function response(route, { method = "GET", body, idempotency, revision, seconds = 100 } = {}) {
+    if (!route.startsWith("/") || route.startsWith("//") || route.includes(".."))
+      throw invalid("잘못된 API 경로");
+    const headers = { Authorization: `Bearer ${key}`, "XenoCI-Error-Format": "2", "User-Agent": `xenoci-cli/${CLIENT_VERSION}` };
+    if (body !== undefined)
+      headers["Content-Type"] = "application/json";
+    if (idempotency)
+      headers["Idempotency-Key"] = idempotency;
+    if (revision !== undefined)
+      headers["If-Match"] = String(revision);
+    let res;
+    try {
+      res = await fetchImpl(base + route, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(seconds * 1000) });
+    } catch {
+      throw invalid("응답을 받지 못했습니다. 변경 요청은 같은 멱등 키로 확인하세요.", "transport_error");
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let value;
+      try {
+        value = JSON.parse(text);
+      } catch {
+        value = null;
+      }
+      const error = new XenociError(res.status, value, "", res.headers.get("x-request-id"));
+      const detail = typeof value?.error === "object" ? value.error : value?.error_detail;
+      for (const field of ["retry_after_seconds", "field", "provider_code", "external_task_id"]) {
+        if (detail?.[field] !== undefined)
+          error.envelope[field] = detail[field];
+      }
+      throw error;
+    }
+    return res;
+  }
+  async function request(route, options) {
+    const res = await response(route, options);
+    try {
+      return await res.json();
+    } catch {
+      throw invalid("서버가 JSON 응답을 반환하지 않았습니다", "invalid_response");
+    }
+  }
+  async function download(appId, artifactId, output) {
+    id(appId);
+    id(artifactId);
+    let cursor, artifact;
+    const cursors = new Set;
+    do {
+      const page = await request(`/apps/${appId}/artifacts?limit=100${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`);
+      if (!Array.isArray(page.items))
+        throw invalid("산출물 목록 형식이 잘못됐습니다", "invalid_response");
+      artifact = page.items.find((item) => item.artifact_id === artifactId);
+      if (artifact)
+        break;
+      cursor = page.next_cursor;
+      if (cursor && (typeof cursor !== "string" || cursors.has(cursor)))
+        throw invalid("산출물 목록 cursor가 반복됩니다", "invalid_response");
+      if (cursor)
+        cursors.add(cursor);
+    } while (cursor);
+    if (!artifact)
+      throw invalid("앱에 속한 산출물을 찾지 못했습니다", "not_found");
+    if (!Number.isSafeInteger(artifact.bytes) || artifact.bytes < 0 || !/^[a-f0-9]{64}$/.test(artifact.sha256))
+      throw invalid("산출물 크기/해시가 없습니다", "invalid_response");
+    const target = resolve(output);
+    const temporary = join(dirname(target), `.${basename(target)}.${randomUUID2()}.part`);
+    const file = await open(temporary, "wx", 384);
+    let bytes = 0;
+    const hash = createHash2("sha256");
+    try {
+      const res = await response(`/apps/${appId}/artifacts/${artifactId}/content`, { seconds: 300 });
+      if (res.status !== 200 || !res.body)
+        throw invalid("전체 산출물 응답이 아닙니다", "invalid_response");
+      for await (const chunk of res.body) {
+        bytes += chunk.length;
+        if (bytes > artifact.bytes)
+          throw invalid("산출물 크기가 메타데이터보다 큽니다", "checksum_mismatch");
+        hash.update(chunk);
+        let offset = 0;
+        while (offset < chunk.length) {
+          const written = await file.write(chunk, offset, chunk.length - offset);
+          if (!written.bytesWritten)
+            throw invalid("파일 저장에 실패했습니다", "write_failed");
+          offset += written.bytesWritten;
+        }
+      }
+      if (bytes !== artifact.bytes || hash.digest("hex") !== artifact.sha256)
+        throw invalid("산출물 크기 또는 SHA256이 일치하지 않습니다", "checksum_mismatch");
+      await file.sync();
+      await file.close();
+      await link(temporary, target);
+      return { artifact_id: artifactId, path: target, bytes, sha256: artifact.sha256 };
+    } finally {
+      await file.close();
+      await unlink(temporary);
+    }
+  }
+  return { request, download };
+}
+async function runIos(argv) {
+  if (!argv.length || argv.includes("--help")) {
+    console.log(IOS_USAGE);
+    return 0;
+  }
+  const words = [], flags = {};
+  for (let index = 0;index < argv.length; index++) {
+    const arg = argv[index];
+    if (!arg.startsWith("--")) {
+      words.push(arg);
+      continue;
+    }
+    const name = arg.slice(2);
+    if (Object.hasOwn(flags, name))
+      throw invalid(`--${name} 중복`);
+    if (name === "json") {
+      flags[name] = true;
+      continue;
+    }
+    if (argv[index + 1] === undefined || argv[index + 1].startsWith("--"))
+      throw invalid(`--${name} 값이 필요합니다`);
+    flags[name] = argv[++index];
+  }
+  const command = words[0] === "sim" && words[1] === "record" ? words.slice(0, 3).join(" ") : ["sim", "job", "artifact"].includes(words[0]) ? words.slice(0, 2).join(" ") : words[0];
+  const common = ["json"];
+  const options = {
+    capabilities: [],
+    build: ["app", "input", "idempotency-key", "revision"],
+    "sim open": ["app", "input", "idempotency-key"],
+    "sim screenshot": ["app", "session", "idempotency-key"],
+    "sim record start": ["app", "session", "max-seconds", "idempotency-key"],
+    "sim record stop": ["app", "session", "recording", "idempotency-key"],
+    "sim tap": ["app", "session", "sequence", "x", "y", "idempotency-key"],
+    "job wait": ["wait-seconds"],
+    "artifact download": ["app", "output"]
+  };
+  if (!Object.hasOwn(options, command))
+    throw invalid(IOS_USAGE);
+  for (const flag of Object.keys(flags))
+    if (![...common, ...options[command]].includes(flag))
+      throw invalid(`지원하지 않는 옵션: --${flag}`);
+  const prefixLength = command.split(" ").length;
+  const positionals = words.slice(prefixLength);
+  if (positionals.length !== (["job wait", "artifact download"].includes(command) ? 1 : 0))
+    throw invalid("명령의 위치 인자가 잘못됐습니다");
+  const required = (name) => {
+    if (!flags[name])
+      throw invalid(`--${name} 값이 필요합니다`);
+    return flags[name];
+  };
+  const number = (name, min, max, integer = true, fallback) => {
+    const raw = flags[name] ?? fallback;
+    const value = raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+    if (!Number.isFinite(value) || integer && !Number.isSafeInteger(value) || value < min || value > max)
+      throw invalid(`--${name} 범위: ${min}..${max}`);
+    return value;
+  };
+  let route = "/capabilities", requestOptions, output;
+  if (command === "job wait")
+    route = `/jobs/${id(positionals[0])}/wait?wait_seconds=${number("wait-seconds", 1, 90, true, 75)}`;
+  else if (command === "artifact download") {
+    id(positionals[0]);
+    id(required("app"));
+    output = required("output");
+  } else if (command !== "capabilities") {
+    const app = id(required("app"));
+    const idempotency = required("idempotency-key");
+    if (idempotency.length > 128 || /[\r\n]/.test(idempotency))
+      throw invalid("잘못된 Idempotency-Key");
+    let body = {};
+    route = `/apps/${app}`;
+    if (command === "build" || command === "sim open") {
+      try {
+        body = JSON.parse(await readFile(required("input"), "utf8"));
+      } catch (error) {
+        if (error.envelope)
+          throw error;
+        throw invalid("요청 본문 JSON 파일을 읽을 수 없습니다");
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.hasOwn(body, "app_id"))
+        throw invalid("본문은 app_id를 제외한 JSON 객체여야 합니다");
+      route += command === "build" ? "/builds" : "/simulators";
+    } else {
+      route += `/simulators/${id(required("session"))}`;
+      if (command === "sim screenshot")
+        route += "/screenshots";
+      if (command === "sim record start") {
+        route += "/recordings";
+        body = { max_seconds: number("max-seconds", 1, 300) };
+      }
+      if (command === "sim record stop")
+        route += `/recordings/${id(required("recording"))}/stop`;
+      if (command === "sim tap") {
+        route += "/actions";
+        body = { expected_sequence: number("sequence", 0, Number.MAX_SAFE_INTEGER), action: { tap: { point: { x: number("x", 0, Number.MAX_SAFE_INTEGER, false), y: number("y", 0, Number.MAX_SAFE_INTEGER, false) } } } };
+      }
+    }
+    requestOptions = { method: "POST", body, idempotency, ...flags.revision === undefined ? {} : { revision: number("revision", 0, Number.MAX_SAFE_INTEGER) } };
+  }
+  const client = createIosClient();
+  const result = output ? await client.download(flags.app, positionals[0], output) : await client.request(route, requestOptions);
+  if (requestOptions && (typeof result.job_id !== "string" || !result.state))
+    throw invalid("접수 응답에 job_id/state가 없습니다", "invalid_response");
+  if (command === "job wait" && (!result.job || typeof result.wait_timed_out !== "boolean"))
+    throw invalid("작업 대기 응답이 잘못됐습니다", "invalid_response");
+  console.log(JSON.stringify(result, null, flags.json ? 0 : 2));
+  if (command !== "job wait")
+    return 0;
+  if (result.job.state === "completed")
+    return 0;
+  if (["failed", "cancelled", "rejected"].includes(result.job.state))
+    return 1;
+  return 2;
+}
+
+// ../../../../tmp/tmp.8H0SAuTqNi/cli/xenoci.mjs
+var VERSION = "1.2.5";
+var USAGE = `xenoci 1.2.5
 사용법:
+  xenoci ios --help                                iOS 앱·빌드·시뮬레이터·산출물 API
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
   xenoci build --script ./ci.sh --dir ./app         지정한 폴더를 올려 빌드
   xenoci build --script ./ci.sh --repo owner/name --ref main [--github-token-env GITHUB_TOKEN]
   xenoci build --script ./ci.sh --repo-url https://gitlab.com/group/app --ref main
+  결과물: --artifacts 'build/*.ipa,build/*.xcarchive' (빌드 폴더 기준, 폴더는 zip, 7일 보관) → xenoci artifacts <id> [--out ./dist]
   옵션: --xcode 26.6 --timeout 30 --priority high --clean --mac rt_... --queue-until-rental --no-wait(접수만 하고 ID 출력)
         --pr 12 --commit <sha> (없으면 CI 변수와 git rev-parse HEAD로 자동; 나중에 xenoci·API에서 PR별로 찾음)
         --dir와 --repo owner/name을 같이 주면 폴더를 올리고 repo는 표시·검색용으로만 씁니다(clone 안 함)
@@ -448,7 +701,7 @@ var USAGE = `xenoci 1.2.4
 
 맥 주문 (결제는 사람이 pay_url에서 합니다):
   xenoci catalog                                    상품·가격·지금 가능한 대수·Xcode
-  xenoci order --tier <id> --hours 24 [--units 1] [--xcode 26.6] [--quote]
+  xenoci order --tier <id> --hours 24 [--units 1] [--start now|ISO] [--xcode 26.6] [--quote]
   xenoci order <RT-...> | orders [--status awaiting_payment]  주문 상태·결제 링크 | 주문 목록
   xenoci wait <RT-...> [--timeout 60]               결제·준비 완료까지 대기
   xenoci reset (--all | <rt_...>...) [--keep-cache] [--when after_build|now]   VM 재설정(manage 권한)
@@ -484,6 +737,8 @@ function parse(argv) {
   return { command, options };
 }
 async function main() {
+  if (process.argv[2] === "ios")
+    return runIos(process.argv.slice(3));
   const { command, options } = parse(process.argv.slice(2));
   if (!command || options.help || ["help", "--help", "-h"].includes(command)) {
     console.log(USAGE);
@@ -496,7 +751,7 @@ async function main() {
   const client = createClient();
   const json = Boolean(options.json);
   const print = (value) => console.log(JSON.stringify(value, null, json ? 0 : 2));
-  const id = options._[0];
+  const id2 = options._[0];
   const int = (name, fallback) => {
     if (options[name] == null)
       return fallback;
@@ -534,23 +789,21 @@ async function main() {
     return 0;
   }
   if (command === "order") {
-    if (id) {
-      const o2 = await client.order(id);
+    if (id2) {
+      const o2 = await client.order(id2);
       print(o2);
       payHint(o2);
       return 0;
     }
     if (!options.tier || !options.hours)
       throw new Error("--tier와 --hours를 입력해 주세요 (xenoci catalog로 상품 확인)");
-    const body2 = { tier: options.tier, hours: int("hours"), units: int("units", 1) };
+    const body2 = { tier: options.tier, hours: int("hours"), units: int("units", 1), ...options.start ? { start: options.start } : {} };
     if (options.quote) {
       print(await client.quote(body2));
       return 0;
     }
     if (options.xcode)
       body2.setup = { xcode: options.xcode };
-    if (options.start)
-      body2.start = options.start;
     const o = await client.createOrder(body2);
     print(o);
     payHint(o);
@@ -569,7 +822,7 @@ async function main() {
     return result.items?.every((i) => i.result === "accepted") ? 0 : 1;
   }
   if (command === "setup") {
-    if (!id)
+    if (!id2)
       throw new Error("맥 ID를 입력해 주세요 (xenoci macs로 확인)");
     const list = (v) => String(v).split(",").map((x) => x.trim()).filter(Boolean);
     const body2 = {
@@ -579,13 +832,13 @@ async function main() {
       ...options.cache != null ? { keep_cache: options.cache === "keep" } : {},
       ...options.when ? { when: options.when } : {}
     };
-    print(await client.updateMac(id, body2, options["idempotency-key"]));
+    print(await client.updateMac(id2, body2, options["idempotency-key"]));
     return 0;
   }
   if (command === "job") {
-    if (!id)
+    if (!id2)
       throw new Error("작업 ID(op_…)를 입력해 주세요");
-    print(await client.job(id));
+    print(await client.job(id2));
     return 0;
   }
   if (command === "extend") {
@@ -593,10 +846,10 @@ async function main() {
       throw new Error("맥 ID와 --hours를 입력해 주세요 (xenoci macs로 확인)");
     const hours = int("hours");
     if (options.quote) {
-      print(options._.length === 1 ? await client.extendQuote(id, hours) : await client.request("/rentals/extend/quote", { method: "POST", body: { rental_ids: options._, hours } }));
+      print(options._.length === 1 ? await client.extendQuote(id2, hours) : await client.request("/rentals/extend/quote", { method: "POST", body: { rental_ids: options._, hours } }));
       return 0;
     }
-    const o = options._.length === 1 ? await client.extend(id, hours) : await client.extendMany(options._, hours);
+    const o = options._.length === 1 ? await client.extend(id2, hours) : await client.extendMany(options._, hours);
     print(o);
     payHint(o);
     return 0;
@@ -640,34 +893,58 @@ async function main() {
     return 0;
   }
   if (command === "wait") {
-    if (!id)
+    if (!id2)
       throw new Error("빌드 ID 또는 주문 번호를 입력해 주세요");
     const timeout = Math.min(60, int("timeout", 60));
-    if (/^RT-/i.test(id)) {
-      const r2 = await client.waitOrder(id, timeout);
+    if (/^RT-/i.test(id2)) {
+      const r2 = await client.waitOrder(id2, timeout);
       print(r2);
       payHint(r2.order || r2);
       return 0;
     }
-    const r = await client.wait(id, timeout);
+    const r = await client.wait(id2, timeout);
     print(r);
     const b = r.build || r;
     return ["succeeded", "failed", "cancelled", "expired"].includes(b.state) ? exitCodeOf(b) : 0;
   }
-  if (["status", "logs", "cancel"].includes(command) && !id)
+  if (["status", "logs", "cancel"].includes(command) && !id2)
     throw new Error("빌드 ID를 입력해 주세요");
   if (command === "status") {
-    print(await client.build(id));
+    print(await client.build(id2));
+    return 0;
+  }
+  if (command === "artifacts") {
+    if (!id2)
+      throw new Error("빌드 ID를 입력해 주세요");
+    const list = await client.artifacts(id2);
+    if (!options.out) {
+      print(list);
+      return 0;
+    }
+    await mkdir(options.out, { recursive: true });
+    for (const a of list.artifacts) {
+      const res = await fetch(a.download_url);
+      if (!res.ok)
+        throw new Error(`${a.name} 내려받기 실패 (HTTP ${res.status})`);
+      const body2 = Buffer.from(await res.arrayBuffer());
+      if (createHash3("sha256").update(body2).digest("hex") !== a.sha256)
+        throw new Error(`${a.name} 체크섬 불일치`);
+      await writeFile(path2.join(options.out, path2.basename(a.name)), body2);
+      if (!json)
+        console.error(`[xenoci] ${a.name} ${(a.bytes / 1048576).toFixed(1)}MB → ${options.out}`);
+    }
+    if (json)
+      print({ ...list, saved_to: options.out });
     return 0;
   }
   if (command === "cancel") {
-    print(await client.cancel(id));
+    print(await client.cancel(id2));
     return 0;
   }
   if (command === "logs") {
     if (options.wait)
-      return exitCodeOf(await follow(client, id, { onLog: (t) => process.stdout.write(t) }));
-    const log = (await client.log(id, 0)).log || "";
+      return exitCodeOf(await follow(client, id2, { onLog: (t) => process.stdout.write(t) }));
+    const log = (await client.log(id2, 0)).log || "";
     if (options.failure) {
       const e = failureExcerpt(log, int("tail", 60));
       if (json)
@@ -683,18 +960,22 @@ ${e.text}
 `)}
 ` : log;
     if (json)
-      print({ id, log: out });
+      print({ id: id2, log: out });
     else
       process.stdout.write(out);
     return 0;
   }
-  if (command !== "build" || !options.script)
-    throw new Error(USAGE);
+  if (["return", "release", "end", "stop"].includes(command))
+    throw Object.assign(new Error("맥은 API로 반납·종료할 수 없습니다. 이용 시간(ends_at, xenoci macs)이 끝나면 저절로 끝나고 VM과 캐시가 삭제됩니다. 그 전에 결과물을 xenoci artifacts <빌드 ID> --out ./dist로 받으세요. 연장 결제를 하지 않으면 더 청구되지 않습니다. 시작 전 이용권 환불은 사람이 XenoCI 고객센터에 신청합니다."), { envelope: { code: "rental_return_unavailable", message: "A rented Mac cannot be returned or ended through the API. It ends by itself at ends_at (xenoci macs); download results first (xenoci artifacts <id> --out ./dist).", retryable: false, fault: "client", next: [{ action: "macs" }, { action: "artifacts" }], docs: "https://xenoci.com/docs/errors#rental_return_unavailable" } });
+  if (command !== "build")
+    throw new Error(`알 수 없는 명령: ${command} (명령 목록: xenoci --help)`);
+  if (!options.script)
+    throw new Error("--script를 입력해 주세요 (올릴 폴더 안의 셸 스크립트 파일, 예: --script ./ci.sh)");
   const gitSource = Boolean(options.repo || options["repo-url"]);
-  const localScript = await readFile(options.script, "utf8").catch((error) => {
+  const localScript = await readFile2(options.script, "utf8").catch((error) => {
     if (gitSource && error.code === "ENOENT")
       return null;
-    throw new Error(error.code === "ENOENT" ? `스크립트 파일이 없습니다: ${options.script}` : error.message);
+    throw new Error(error.code === "ENOENT" ? `스크립트 파일이 없습니다: ${options.script} (--script는 명령이 아니라 올릴 폴더 안의 스크립트 파일 경로입니다. 명령을 ci.sh에 적고 --script ./ci.sh)` : error.message);
   });
   const body = { script: localScript ?? `bash ${JSON.stringify(options.script.replace(/^\.\//, ""))}
 ` };
@@ -719,6 +1000,8 @@ ${e.text}
     body.rental_id = options.mac;
   if (options["queue-until-rental"])
     body.queue_until_rental = true;
+  if (options.artifacts)
+    body.artifacts = options.artifacts.split(",").map((p) => p.trim()).filter(Boolean);
   const upload = !options.repo || options.dir != null;
   const refSha = /^[0-9a-f]{7,40}$/i.test(options.ref || "") ? options.ref : undefined;
   const meta = await detectBuildMeta(upload ? options.dir || "." : null, { pr: options.pr, commit: options.commit ?? refSha, repo: options.repo });

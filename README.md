@@ -59,8 +59,8 @@ codex mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build 
 { "mcpServers": { "xenoci": { "command": "npx", "args": ["-y", "-p", "github:xeno-ci/build", "xenoci-mcp"], "env": { "XENOCI_API_KEY": "..." } } } }
 ```
 
-도구: catalog, quote, create_order, order_status, wait_order, release_order, list_macs, extend, join_waitlist, build, build_status, wait_build, build_log, cancel_build, list_errors, secrets, account.
-CLI도 같습니다: `xenoci catalog | order | orders | wait | release | macs | extend | waitlist | secrets | errors | whoami`, 모든 명령 `--json`.
+도구: catalog, quote, create_order, order_status, wait_order, list_macs, extend, reset_macs, set_xcode, update_mac, job_status, join_waitlist, build, build_artifacts, build_status, wait_build, build_log, cancel_build, list_errors, secrets, account.
+CLI도 같습니다: `xenoci catalog | order | orders | wait | macs | extend | xcode | reset | setup | job | waitlist | secrets | build | status | logs | artifacts | cancel | errors | whoami | ios`, 모든 명령 `--json`. 견적·주문의 `--start`(MCP `start`)로 미래 시작 시각의 재고와 금액을 봅니다. 빌드 결과물(ipa·xcarchive·xcresult)은 `xenoci build --artifacts 'build/*.ipa'`로 남기고 `xenoci artifacts <id> --out ./dist`(MCP `build_artifacts`)로 받습니다(7일 보관).
 오류는 `{"error":{"code","message","retryable","next","request_id",...}}` 형식이고 `next`에 다음 요청이 들어 있습니다.
 
 AI용 안내(llms.txt): https://gist.github.com/001005HS/d6a483152886b14e07bda46e90da304d · OpenAPI: https://xenoci.com/openapi.json · 오류 코드: https://xenoci.com/docs/errors

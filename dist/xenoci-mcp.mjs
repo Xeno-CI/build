@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../tmp/tmp.pJHViUS0uk/cli/lib.mjs
+// ../../../../tmp/tmp.8H0SAuTqNi/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -120,6 +120,7 @@ function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENO
     builds: (query) => request(`/builds${qs(query)}`),
     cancel: (buildId) => request(`/builds/${id(buildId)}/cancel`, { method: "POST" }),
     log: (buildId, offset = 0) => request(`/builds/${id(buildId)}/log?offset=${offset}`),
+    artifacts: (buildId) => request(`/builds/${id(buildId)}/artifacts`),
     wait: (buildId, seconds = 2) => request(`/builds/${id(buildId)}/wait?timeout=${seconds}`),
     submit: (body, idempotency = randomUUID()) => request("/builds", { method: "POST", body, idempotency }),
     upload: (dir, options) => uploadFolder({ request }, dir, options),
@@ -423,7 +424,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.4", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.5", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -461,7 +462,7 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../tmp/tmp.pJHViUS0uk/mcp/server.mjs
+// ../../../../tmp/tmp.8H0SAuTqNi/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
@@ -475,10 +476,10 @@ var obj = (properties = {}, required = []) => ({ type: "object", properties, req
 var HOURS = int("Rental length in hours, a multiple of 24 (24 = one 24-hour pass).", { minimum: 24, multipleOf: 24 });
 var tools = [
   { name: "catalog", description: "Mac products: price per 24h (KRW, VAT incl.), vCPU/RAM, Xcode versions, how many can start now, sales_open. Call first.", inputSchema: obj() },
-  { name: "quote", description: "Price and availability for a new rental before ordering. No side effects.", inputSchema: obj({ tier: str("Product id from catalog.tiers[].id"), units: int("Number of Macs", { minimum: 1, default: 1 }), hours: HOURS }, ["tier", "hours"]) },
+  { name: "quote", description: "Price and availability for a new rental before ordering. No side effects. With start, availability is for that future window (same rule as create_order).", inputSchema: obj({ tier: str("Product id from catalog.tiers[].id"), units: int("Number of Macs", { minimum: 1, default: 1 }), hours: HOURS, start: str('"now" (default) or an ISO time') }, ["tier", "hours"]) },
   {
     name: "create_order",
-    description: `Reserve Macs and get a payment link (status awaiting_payment, hold expires at pay_url_expires_at). ${PAY_NOTE}`,
+    description: `Create an order and get a payment link (status awaiting_payment; the link works until pay_url_expires_at). The Mac is held only until hold_expires_at; when the person opens the link the stock is checked again, and a sold-out tier then answers no_capacity. ${PAY_NOTE}`,
     inputSchema: obj({
       tier: str("Product id from catalog"),
       units: int("Number of Macs", { minimum: 1, default: 1 }),
@@ -487,7 +488,7 @@ var tools = [
       start: str('"now" (default) or an ISO time')
     }, ["tier", "hours"])
   },
-  { name: "order_status", description: "One order: status (awaiting_payment, paid, provisioning, ready, expired, canceled), pay_url, rental_ids. Without order_no lists recent orders (optional status filter).", inputSchema: obj({ order_no: str("Order number RT-..."), status: { type: "string", enum: ["awaiting_payment", "paid", "provisioning", "ready", "expired", "canceled"] } }) },
+  { name: "order_status", description: "One order: status (awaiting_payment, paid, provisioning, ready, recovering, ended, expired, canceled; recovering = its Mac is in recovery or suspended, check list_macs and do not build yet; ended = every Mac of the order has ended, do not build), pay_url, rental_ids. Without order_no lists recent orders (optional status filter).", inputSchema: obj({ order_no: str("Order number RT-..."), status: { type: "string", enum: ["awaiting_payment", "paid", "provisioning", "ready", "ended", "expired", "canceled"] } }) },
   { name: "wait_order", description: "Wait until an order is paid and its Macs are ready (or it expires). Long-poll up to timeout_s (max 60); call again while status is not final.", inputSchema: obj({ order_no: str("Order number RT-..."), timeout_s: int("Seconds to wait", { minimum: 0, maximum: 60, default: 60 }) }, ["order_no"]) },
   { name: "list_macs", description: "Rented Macs: id, state, Xcode, remaining_minutes, ends_at, can_extend, current build; plus the build queue.", inputSchema: obj() },
   {
@@ -538,9 +539,11 @@ var tools = [
       wait: { type: "boolean", default: true },
       pr: int("Pull request number this build is for; find it later with GET /builds?pr=N (auto from CI variables when omitted)", { minimum: 1 }),
       commit: str("Commit SHA being built (auto: git rev-parse HEAD in dir, or the CI commit)"),
-      upload_repo: str("GitHub owner/name to label an uploaded folder with (display and ?repo= filter only; not cloned). Auto from GITHUB_REPOSITORY")
+      upload_repo: str("GitHub owner/name to label an uploaded folder with (display and ?repo= filter only; not cloned). Auto from GITHUB_REPOSITORY"),
+      artifacts: { type: "array", items: { type: "string" }, maxItems: 20, description: 'Result files to keep, globs relative to the build folder, e.g. ["build/*.ipa", "build/*.xcarchive", "build/*.xcresult"] (folders are zipped). Get them with build_artifacts; kept 7 days.' }
     }, ["script"])
   },
+  { name: "build_artifacts", description: "Result files of a build that was submitted with artifacts: name, path, bytes, sha256 and a download_url valid 15 minutes (no key needed; download it with any HTTP client). Kept 7 days.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
   { name: "build_status", description: "Build state (queued with position, running, succeeded, failed, cancelled), exit code, failure summary.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
   { name: "wait_build", description: "Wait for a build to finish, up to timeout_s (max 60). Call again while state is queued or running.", inputSchema: obj({ id: str("Build id rb_..."), timeout_s: int("Seconds", { minimum: 0, maximum: 60, default: 60 }) }, ["id"]) },
   {
@@ -555,9 +558,18 @@ var tools = [
     description: "Build secrets (env vars, masked in logs). action=list returns names only; put sets name=value; delete removes. Values are never returned.",
     inputSchema: obj({ action: { type: "string", enum: ["list", "put", "delete"], default: "list" }, name: str("UPPER_SNAKE name"), value: str("Secret value (put only)") })
   },
-  { name: "account", description: "This API key: account, key name, permission levels (read, build, manage; older keys may also list order and secrets, which manage covers), limits and remaining requests/builds/pending orders.", inputSchema: obj() }
+  { name: "account", description: "This API key: account, key name, what it may do (key.can: read, build, order, manage, secrets; manage includes order and secrets), limits and remaining requests/builds/pending orders.", inputSchema: obj() }
 ];
 var ALIASES = { build_logs: "build_log", list_rentals: "list_macs" };
+var RETURN_GUESSES = new Set(["return_mac", "return_rental", "release_mac", "release_rental", "end_rental", "stop_mac", "cancel_rental", "release"]);
+var RETURN_ANSWER = { error: {
+  code: "rental_return_unavailable",
+  retryable: false,
+  fault: "client",
+  message: "A rented Mac cannot be returned or ended through the API. It ends by itself at ends_at (list_macs shows ends_at and remaining_minutes); then its VM and cache are deleted. Download results with build_artifacts before that. Nothing more is charged unless someone pays an extend link. For a refund of unstarted days the person contacts XenoCI support.",
+  next: [{ action: "list_macs" }, { action: "build_artifacts" }],
+  docs: "https://xenoci.com/docs/errors#rental_return_unavailable"
+} };
 var send = (message) => process.stdout.write(JSON.stringify(message) + `
 `);
 var text = (value, isError = false) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }], isError });
@@ -586,13 +598,17 @@ var payView = (o) => ({
   ...o.next ? { next: o.next } : {},
   ...o.status === "awaiting_payment" ? { next_step: PAY_NOTE } : {}
 });
+var ID_SOURCE = { id: "build (its id) or GET builds", order_no: "create_order or order_status", job_id: "reset_macs / set_xcode / update_mac (job_id)", rental_id: "list_macs", tier: "catalog", hours: "a multiple of 24", version: "list_macs setup_options", script: "a shell command line" };
 async function call(requested, args = {}, client, progress) {
   const name = ALIASES[requested] || requested;
+  const missing = (tools.find((t) => t.name === name)?.inputSchema.required || []).filter((k) => args[k] == null || args[k] === "");
+  if (missing.length)
+    return text({ error: { code: "invalid_request", message: `${missing.join(", ")} is required (${missing.map((k) => `${k}: ${ID_SOURCE[k] || "see tools/list"}`).join("; ")})`, retryable: false, fault: "client", next: [] } }, true);
   switch (name) {
     case "catalog":
       return text(await client.catalog());
     case "quote":
-      return text(await client.quote({ tier: args.tier, units: args.units ?? 1, hours: args.hours }));
+      return text(await client.quote({ tier: args.tier, units: args.units ?? 1, hours: args.hours, ...args.start ? { start: args.start } : {} }));
     case "create_order": {
       const body2 = { tier: args.tier, units: args.units ?? 1, hours: args.hours, ...args.start ? { start: args.start } : {}, ...args.xcode ? { setup: { xcode: args.xcode } } : {} };
       return text(payView(await client.createOrder(body2)));
@@ -663,6 +679,8 @@ async function call(requested, args = {}, client, progress) {
       const r = await client.wait(args.id, args.timeout_s ?? 60);
       return text(buildView(r.build || r));
     }
+    case "build_artifacts":
+      return text(await client.artifacts(args.id));
     case "build_log": {
       const mode = args.mode || "tail", lines = args.lines || 200;
       if (mode === "range") {
@@ -709,12 +727,14 @@ async function call(requested, args = {}, client, progress) {
     case "build":
       break;
     default:
-      throw Object.assign(new Error(`unknown tool ${requested}`), { rpc: -32602 });
+      if (RETURN_GUESSES.has(name))
+        return text(RETURN_ANSWER, true);
+      throw Object.assign(new Error(`unknown tool ${requested}; call tools/list for the tool names`), { rpc: -32602 });
   }
   if (typeof args.script !== "string" || !args.script.trim())
     return text({ error: { code: "invalid_request", message: "script is required", retryable: false, next: [] } }, true);
   const body = { script: args.script };
-  for (const k of ["ref", "xcode", "timeout_min", "rental_id", "queue_until_rental"])
+  for (const k of ["ref", "xcode", "timeout_min", "rental_id", "queue_until_rental", "artifacts"])
     if (args[k] != null)
       body[k] = args[k];
   if (args.clean)
@@ -781,7 +801,7 @@ function startServer({ input = process.stdin, client: injected } = {}) {
           protocolVersion: m.params?.protocolVersion || "2025-06-18",
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "xenoci", version: VERSION },
-          instructions: "XenoCI rents dedicated Mac mini M4 VMs for builds. Flow: catalog -> create_order -> show pay_url to the user -> wait_order -> build -> on failure build_log mode=failure, fix, build again -> list_macs to see remaining time -> extend (pay_url) if needed. On an error read error.code, error.retryable and error.next. Docs: https://xenoci.com/llms.txt"
+          instructions: 'XenoCI rents dedicated Mac mini M4 VMs for builds. Flow: catalog -> quote -> create_order -> show pay_url to the user -> wait_order -> build (artifacts: ["build/*.ipa"] to keep result files) -> on failure build_log mode=failure, fix, build again -> build_artifacts to download results -> list_macs to see remaining time -> extend (pay_url) if needed. There is no return: a Mac ends by itself at ends_at and its VM is deleted, so download results before that. On an error read error.code, error.retryable and error.next. Docs: https://xenoci.com/llms.txt'
         };
       else if (m.method === "ping")
         result = {};
@@ -812,5 +832,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../tmp/tmp.pJHViUS0uk/mcp/bin.mjs
+// ../../../../tmp/tmp.8H0SAuTqNi/mcp/bin.mjs
 startServer();
