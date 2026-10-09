@@ -21,6 +21,29 @@ jobs:
 
 `pull_request` 이벤트면 PR 번호와 PR head 커밋(GitHub의 임시 merge 커밋이 아니라 PR 브랜치의 실제 커밋)을 빌드에 기록하고 그 커밋을 빌드합니다. `GET /api/ci/v1/builds?pr=번호`로 PR별 빌드를 찾을 수 있습니다.
 
+### 취소 · merge queue · 스택 PR
+
+GitHub에서 잡을 취소하면(취소 버튼, `concurrency`의 `cancel-in-progress`) Action이 Mac의 빌드도 바로 취소합니다. 같은 PR에 새 커밋이 올라오거나 스택을 rebase할 때 이전 커밋의 빌드가 Mac을 붙잡지 않게 하려면:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+merge queue를 쓰면 트리거에 `merge_group:`을 추가하세요. Action은 merge queue가 만든 커밋을 빌드하고, 큐 브랜치(`gh-readonly-queue/<base>/pr-<번호>-<sha>`)에서 PR 번호를 읽어 기록합니다. 필수 체크는 job 이름이므로 `pull_request`와 `merge_group`에서 같은 job을 쓰면 됩니다.
+
+```yaml
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+```
+
+GitHub 스택 PR은 층마다 워크플로가 돕니다. 맨 위 층이 스택의 모든 변경을 담으므로, Mac 빌드는 맨 위 층과 merge queue에서만 돌리면 빌드 수가 줄어듭니다: `if: github.event_name == 'merge_group' || github.event.pull_request.stack == null || github.event.pull_request.stack.position == github.event.pull_request.stack.size`. 먼저 머지할 빌드는 `priority: high`로 내 계정 대기열 맨 앞에 둘 수 있습니다.
+
+같은 저장소의 빌드는 브랜치·PR이 달라도 Mac 안의 같은 작업 폴더와 Xcode DerivedData를 이어 쓰고, 그 저장소를 마지막에 빌드한 Mac이 먼저 배정됩니다. 스택의 위아래 층처럼 차이가 작은 커밋은 바뀐 파일만 다시 컴파일합니다. 처음부터 빌드하려면 CLI `--clean`.
+
 ## CLI (Jenkins · GitLab · Bitbucket · CircleCI · Buildkite · 셸 · git 없는 폴더)
 
 Node 없이 쓰는 실행 파일 하나입니다. 설치 스크립트가 SHA256SUMS로 체크섬을 확인합니다.

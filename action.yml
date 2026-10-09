@@ -43,15 +43,21 @@ runs:
         # so the build can be found by PR number and commit (GET /api/ci/v1/builds?pr=N).
         XENO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         XENO_PR: ${{ github.event.pull_request.number }}
+        # merge_group runs carry no pull_request; the queue branch names the PR: refs/heads/gh-readonly-queue/<base>/pr-<N>-<sha>.
+        XENO_MERGE_GROUP_REF: ${{ github.event.merge_group.head_ref }}
         XENO_ACTION_PATH: ${{ github.action_path }}
       run: |
         if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다. https://xenoci.com/app/api-keys 에서 키를 만들고 저장소(또는 조직) 시크릿 XENOCI_API_KEY에 넣은 뒤 워크플로의 with: api-key 에 secrets.XENOCI_API_KEY 를 넘겨 주세요."; exit 1; fi
         if [ "$XENO_SOURCE" != git ] && [ "$XENO_SOURCE" != upload ]; then echo "::error title=XenoCI source 값 오류::source는 git 또는 upload입니다 (받은 값: $XENO_SOURCE)"; exit 1; fi
         echo "::add-mask::$XENO_GITHUB_TOKEN"
         args=(build --script "$XENO_SCRIPT" --timeout "$XENO_TIMEOUT" --priority "$XENO_PRIORITY" --wait --commit "$XENO_REF")
+        if [ -z "$XENO_PR" ] && [[ "$XENO_MERGE_GROUP_REF" =~ /gh-readonly-queue/.+/pr-([1-9][0-9]*)-[0-9a-f]+$ ]]; then XENO_PR="${BASH_REMATCH[1]}"; fi
         if [ -n "$XENO_PR" ]; then args+=(--pr "$XENO_PR"); fi
         # upload: the repo name only labels the build (the Mac gets the uploaded folder, not a clone).
         if [ "$XENO_SOURCE" = upload ]; then args+=(--dir "${GITHUB_WORKSPACE:-.}" --repo "$XENO_REPO");
         else args+=(--repo "$XENO_REPO" --ref "$XENO_REF" --github-token-env XENO_GITHUB_TOKEN); fi
         if [ -n "$XENO_XCODE" ]; then args+=(--xcode "$XENO_XCODE"); fi
-        node "$XENO_ACTION_PATH/dist/xenoci.mjs" "${args[@]}"
+        # exec: on a cancelled job the runner signals only this step's own process (SIGINT, then SIGTERM, then kills the
+        # tree). Without exec that is bash, which waits on node and never passes the signal on, so the CLI could not cancel
+        # the build and the Mac stayed busy until the timeout. Nothing may follow this line; node's exit code is the step's.
+        exec node "$XENO_ACTION_PATH/dist/xenoci.mjs" "${args[@]}"
