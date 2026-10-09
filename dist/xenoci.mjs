@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-// ../../../../tmp/tmp.8H0SAuTqNi/cli/xenoci.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/cli/xenoci.mjs
 import { readFile as readFile2, writeFile, mkdir } from "node:fs/promises";
 import { createHash as createHash3 } from "node:crypto";
 import path2 from "node:path";
 
-// ../../../../tmp/tmp.8H0SAuTqNi/cli/lib.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/cli/lib.mjs
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -47,7 +47,9 @@ function errorDetail(body, text, status) {
   const code = env?.code ?? (typeof body.error === "string" ? body.error : body.code ?? body.message ?? "error");
   const isCode = /^[a-z][a-z0-9_]{1,63}$/.test(String(code));
   const fallback = status === 401 ? "unauthorized" : status === 403 ? "forbidden" : status === 404 ? "not_found" : status === 429 ? "rate_limited" : `http_${status}`;
+  const { code: _c, message: _m, retryable: _r, retry_after_s: _ra, fault: _f, next: _n, docs: _d, request_id: _q, failure: _fl, status: _s, ...extra } = env || {};
   return {
+    ...extra,
     code: isCode ? String(code) : fallback,
     message: env?.message ?? (typeof body.message === "string" ? body.message : isCode ? null : String(code)),
     retryable: env?.retryable ?? null,
@@ -61,10 +63,17 @@ function errorDetail(body, text, status) {
   };
 }
 var DEFAULT_API_URL = "https://xenoci.com";
-var CLIENT_VERSION = "1.2.5";
+var CLIENT_VERSION = "1.2.6";
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
-    throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
+    throw new XenociError(401, { error: {
+      code: "api_key_required",
+      retryable: false,
+      fault: "client",
+      message: "XENOCI_API_KEY is not set. Make a key at https://xenoci.com/app/api-keys, put it in this MCP server's or shell's env as XENOCI_API_KEY and restart the agent (or the MCP server) so it is read. XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys).",
+      next: [{ action: "create_api_key", url: "https://xenoci.com/app/api-keys" }],
+      docs: "https://xenoci.com/docs/errors#api_key_required"
+    } });
   const base = url.replace(/\/$/, "") + "/api/ci/v1";
   async function request(route, { method = "GET", body, raw, contentType, idempotency } = {}) {
     const headers = { Authorization: `Bearer ${key}`, "XenoCI-Error-Format": "2", "User-Agent": `xenoci-${agent}/${CLIENT_VERSION}` };
@@ -435,7 +444,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
   };
 }
 
-// ../../../../tmp/tmp.8H0SAuTqNi/cli/ios.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/cli/ios.mjs
 import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import { open, readFile, link, unlink } from "node:fs/promises";
 import { resolve, dirname, basename, join } from "node:path";
@@ -683,9 +692,9 @@ async function runIos(argv) {
   return 2;
 }
 
-// ../../../../tmp/tmp.8H0SAuTqNi/cli/xenoci.mjs
-var VERSION = "1.2.5";
-var USAGE = `xenoci 1.2.5
+// ../../../../tmp/tmp.qsPUtKpUu9/cli/xenoci.mjs
+var VERSION = "1.2.6";
+var USAGE = `xenoci 1.2.6
 사용법:
   xenoci ios --help                                iOS 앱·빌드·시뮬레이터·산출물 API
   xenoci build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
