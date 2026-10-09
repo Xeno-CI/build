@@ -48,6 +48,8 @@ curl만 쓰는 방법(REST 예시)과 오류 코드: https://xenoci.com/agent-st
 
 ## AI 에이전트 (MCP · Claude Code · Codex · Cursor · 오모)
 
+설정 파일 예시(Claude Code `.mcp.json`, Codex `config.toml`, Cursor `mcp.json`)와 연결 확인, 첫 요청까지: [mcp/CONNECT.md](mcp/CONNECT.md)
+
 AI가 API 키 하나로 맥 확인·주문(결제 링크는 사람에게)·빌드·실패 로그 분석·재빌드·연장까지 합니다. 사람은 결제 링크에서 동의·결제만 합니다.
 
 ```sh

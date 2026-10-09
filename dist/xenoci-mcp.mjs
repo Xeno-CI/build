@@ -15,7 +15,7 @@ var __export = (target, all) => {
 };
 var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 
-// ../../../../tmp/tmp.8H0SAuTqNi/cli/lib.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/cli/lib.mjs
 var exports_lib = {};
 __export(exports_lib, {
   ALWAYS_EXCLUDED: () => ALWAYS_EXCLUDED,
@@ -60,7 +60,9 @@ function errorDetail(body, text, status) {
   const code = env?.code ?? (typeof body.error === "string" ? body.error : body.code ?? body.message ?? "error");
   const isCode = /^[a-z][a-z0-9_]{1,63}$/.test(String(code));
   const fallback = status === 401 ? "unauthorized" : status === 403 ? "forbidden" : status === 404 ? "not_found" : status === 429 ? "rate_limited" : `http_${status}`;
+  const { code: _c, message: _m, retryable: _r, retry_after_s: _ra, fault: _f, next: _n, docs: _d, request_id: _q, failure: _fl, status: _s, ...extra } = env || {};
   return {
+    ...extra,
     code: isCode ? String(code) : fallback,
     message: env?.message ?? (typeof body.message === "string" ? body.message : isCode ? null : String(code)),
     retryable: env?.retryable ?? null,
@@ -75,7 +77,14 @@ function errorDetail(body, text, status) {
 }
 function createClient({ key = process.env.XENOCI_API_KEY, url = process.env.XENOCI_API_URL || DEFAULT_API_URL, fetchImpl = fetch, agent = "cli" } = {}) {
   if (!key)
-    throw new Error("XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys)");
+    throw new XenociError(401, { error: {
+      code: "api_key_required",
+      retryable: false,
+      fault: "client",
+      message: "XENOCI_API_KEY is not set. Make a key at https://xenoci.com/app/api-keys, put it in this MCP server's or shell's env as XENOCI_API_KEY and restart the agent (or the MCP server) so it is read. XENOCI_API_KEY를 설정해 주세요 (API 키: https://xenoci.com/app/api-keys).",
+      next: [{ action: "create_api_key", url: "https://xenoci.com/app/api-keys" }],
+      docs: "https://xenoci.com/docs/errors#api_key_required"
+    } });
   const base = url.replace(/\/$/, "") + "/api/ci/v1";
   async function request(route, { method = "GET", body, raw, contentType, idempotency } = {}) {
     const headers = { Authorization: `Bearer ${key}`, "XenoCI-Error-Format": "2", "User-Agent": `xenoci-${agent}/${CLIENT_VERSION}` };
@@ -424,7 +433,7 @@ async function uploadFolder(client, root, { project = defaultProject(root), onPr
     upload_ms: Date.now() - hashed
   };
 }
-var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.5", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
+var run, UPLOAD_MAX_BYTES, ALWAYS_EXCLUDED, BATCH_BYTES, TERMINAL, XenociError, DEFAULT_API_URL = "https://xenoci.com", CLIENT_VERSION = "1.2.6", exitCodeOf = (build) => Number.isInteger(build.exit_code) ? build.exit_code : build.state === "succeeded" ? 0 : 1, DEFAULT_IGNORE, cacheFile = (root) => path.join(process.env.XENOCI_CACHE_DIR || path.join(os.homedir(), ".cache", "xenoci"), `${createHash("sha256").update(path.resolve(root)).digest("hex").slice(0, 16)}.json`);
 var init_lib = __esm(() => {
   run = promisify(execFile);
   UPLOAD_MAX_BYTES = 2 * 1024 ** 3;
@@ -462,21 +471,21 @@ var init_lib = __esm(() => {
   ];
 });
 
-// ../../../../tmp/tmp.8H0SAuTqNi/mcp/server.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/mcp/server.mjs
 import path2 from "node:path";
 import readline from "node:readline";
 var lib = await Promise.resolve().then(() => (init_lib(), exports_lib));
 var { createClient: createClient2, follow: follow2, exitCodeOf: exitCodeOf2, XenociError: XenociError2, failureExcerpt: failureExcerpt2 } = lib;
 var LOG_TAIL = 20000;
 var VERSION = lib.CLIENT_VERSION === "dev" ? "0.2.0" : lib.CLIENT_VERSION;
-var PAY_NOTE = "Show pay_url to the user as a link and ask them to open it, sign in with the same account, accept the terms and pay. You cannot pay. Then call wait_order.";
+var PAY_NOTE = "Tell the user the price (quote) before ordering. Show pay_url to the user as a link and ask them to open it, sign in with the same account, accept the terms and pay. You cannot pay. Then call wait_order.";
 var str = (description, extra = {}) => ({ type: "string", description, ...extra });
 var int = (description, extra = {}) => ({ type: "integer", description, ...extra });
 var obj = (properties = {}, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 var HOURS = int("Rental length in hours, a multiple of 24 (24 = one 24-hour pass).", { minimum: 24, multipleOf: 24 });
 var tools = [
   { name: "catalog", description: "Mac products: price per 24h (KRW, VAT incl.), vCPU/RAM, Xcode versions, how many can start now, sales_open. Call first.", inputSchema: obj() },
-  { name: "quote", description: "Price and availability for a new rental before ordering. No side effects. With start, availability is for that future window (same rule as create_order).", inputSchema: obj({ tier: str("Product id from catalog.tiers[].id"), units: int("Number of Macs", { minimum: 1, default: 1 }), hours: HOURS, start: str('"now" (default) or an ISO time') }, ["tier", "hours"]) },
+  { name: "quote", description: "Price and availability for a new rental before ordering. No side effects. available 0 = sold out now; earliest_start_at is when one frees (order with start set to it, or join_waitlist). With start, availability is for that future window (same rule as create_order).", inputSchema: obj({ tier: str("Product id from catalog.tiers[].id"), units: int("Number of Macs", { minimum: 1, default: 1 }), hours: HOURS, start: str('"now" (default) or an ISO time') }, ["tier", "hours"]) },
   {
     name: "create_order",
     description: `Create an order and get a payment link (status awaiting_payment; the link works until pay_url_expires_at). The Mac is held only until hold_expires_at; when the person opens the link the stock is checked again, and a sold-out tier then answers no_capacity. ${PAY_NOTE}`,
@@ -484,12 +493,12 @@ var tools = [
       tier: str("Product id from catalog"),
       units: int("Number of Macs", { minimum: 1, default: 1 }),
       hours: HOURS,
-      xcode: str("Xcode version from catalog (optional)"),
+      xcode: str("Xcode version from catalog tiers[].xcode (optional; default: the first one listed, the newest)"),
       start: str('"now" (default) or an ISO time')
     }, ["tier", "hours"])
   },
   { name: "order_status", description: "One order: status (awaiting_payment, paid, provisioning, ready, recovering, ended, expired, canceled; recovering = its Mac is in recovery or suspended, check list_macs and do not build yet; ended = every Mac of the order has ended, do not build), pay_url, rental_ids. Without order_no lists recent orders (optional status filter).", inputSchema: obj({ order_no: str("Order number RT-..."), status: { type: "string", enum: ["awaiting_payment", "paid", "provisioning", "ready", "ended", "expired", "canceled"] } }) },
-  { name: "wait_order", description: "Wait until an order is paid and its Macs are ready (or it expires). Long-poll up to timeout_s (max 60); call again while status is not final.", inputSchema: obj({ order_no: str("Order number RT-..."), timeout_s: int("Seconds to wait", { minimum: 0, maximum: 60, default: 60 }) }, ["order_no"]) },
+  { name: "wait_order", description: "Wait until an order is paid and its Macs are ready (or it expires). Long-poll up to timeout_s (max 60); call again while status is not final. At ready, rental_ids are the Macs to build on (build picks a free one when rental_id is omitted). The rental time starts when the Mac is ready.", inputSchema: obj({ order_no: str("Order number RT-..."), timeout_s: int("Seconds to wait", { minimum: 0, maximum: 60, default: 60 }) }, ["order_no"]) },
   { name: "list_macs", description: "Rented Macs: id, state, Xcode, remaining_minutes, ends_at, can_extend, current build; plus the build queue.", inputSchema: obj() },
   {
     name: "extend",
@@ -524,26 +533,26 @@ var tools = [
   { name: "join_waitlist", description: "Get notified when a sold-out product is back. leave=true with id removes the entry; no args lists entries.", inputSchema: obj({ tier: str("Product id"), units: int("Number of Macs", { minimum: 1, default: 1 }), id: str("Waitlist entry id (to leave)"), leave: { type: "boolean" } }) },
   {
     name: "build",
-    description: "Run a build on a rented Mac. Default uploads dir (only changed files after the first time); or repo+ref / repo_url. wait=true (default) waits and returns state, exit code, failure summary and log tail.",
+    description: `Run a build on a rented Mac (needs a Mac: list_macs; none -> catalog, create_order, wait_order, or queue_until_rental=true). Uploads dir (only changed files after the first time); or repo+ref / repo_url. wait=true (default) waits and returns state, exit code, failure summary and log tail; if your client times the call out, the build keeps running: call wait_build with its id. To get an .ipa / .app / .xcresult back, list it in artifacts and then call build_artifacts. Upload skips .git, DerivedData, Pods, node_modules, .build, .swiftpm, xcuserdata and the folder's .gitignore matches (without a .gitignore: build/, *.ipa, *.xcarchive, *.xcresult); max 2 GB. Without signing secrets an .ipa cannot be exported; keep the unsigned .xcarchive or the simulator .app instead. Example for a Swift app: script "xcodebuild -scheme App -destination generic/platform=iOS -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO", artifacts ["build/App.xcarchive"].`,
     inputSchema: obj({
       script: str('Shell commands run on the Mac in the uploaded folder, e.g. "xcodebuild -scheme App test" or "bash ci.sh". "./ci.sh" works only if ci.sh is executable (chmod +x) in the folder; "bash ci.sh" always works.'),
-      dir: str("Folder to upload (default: current folder)"),
+      dir: str("Absolute path of the project folder to upload, e.g. /Users/me/MyApp. Default: the MCP server's working folder, which is often not your project, so pass it."),
       repo: str("GitHub owner/name (public)"),
       repo_url: str("Public git https URL"),
       ref: str("Branch, tag or commit"),
-      xcode: str("Xcode version"),
+      xcode: str("Xcode version (default: the Mac's current one, list_macs xcode)"),
       rental_id: str("Run on this Mac (default: any free Mac of yours)"),
       timeout_min: int("Build time limit", { minimum: 1, maximum: 360 }),
       queue_until_rental: { type: "boolean", description: "If you have no Mac yet, keep the build queued until an order becomes ready" },
       clean: { type: "boolean", description: "Discard the source cached on the Mac" },
-      wait: { type: "boolean", default: true },
+      wait: { type: "boolean", default: true, description: "true: wait for the end (up to your client's tool timeout; then use wait_build). false: return the build id at once." },
       pr: int("Pull request number this build is for; find it later with GET /builds?pr=N (auto from CI variables when omitted)", { minimum: 1 }),
       commit: str("Commit SHA being built (auto: git rev-parse HEAD in dir, or the CI commit)"),
       upload_repo: str("GitHub owner/name to label an uploaded folder with (display and ?repo= filter only; not cloned). Auto from GITHUB_REPOSITORY"),
-      artifacts: { type: "array", items: { type: "string" }, maxItems: 20, description: 'Result files to keep, globs relative to the build folder, e.g. ["build/*.ipa", "build/*.xcarchive", "build/*.xcresult"] (folders are zipped). Get them with build_artifacts; kept 7 days.' }
+      artifacts: { type: "array", items: { type: "string" }, maxItems: 20, description: `Result files to keep, globs relative to the build folder, e.g. ["build/*.ipa", "build/*.xcarchive", "build/*.xcresult"] (a folder comes back as <name>.zip). Paths are relative to the uploaded folder's root. Get them with build_artifacts; kept 7 days.` }
     }, ["script"])
   },
-  { name: "build_artifacts", description: "Result files of a build that was submitted with artifacts: name, path, bytes, sha256 and a download_url valid 15 minutes (no key needed; download it with any HTTP client). Kept 7 days.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
+  { name: "build_artifacts", description: `Result files of a build that was submitted with artifacts: name, path, bytes, sha256 and a download_url valid 15 minutes. This tool does not save files: download each download_url yourself (no key needed, e.g. curl -fLo dist/App.ipa "<download_url>") and compare sha256. Empty artifacts = no file matched the build's patterns (check build_log). Kept 7 days; call again for a fresh link.`, inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
   { name: "build_status", description: "Build state (queued with position, running, succeeded, failed, cancelled), exit code, failure summary.", inputSchema: obj({ id: str("Build id rb_...") }, ["id"]) },
   { name: "wait_build", description: "Wait for a build to finish, up to timeout_s (max 60). Call again while state is queued or running.", inputSchema: obj({ id: str("Build id rb_..."), timeout_s: int("Seconds", { minimum: 0, maximum: 60, default: 60 }) }, ["id"]) },
   {
@@ -801,7 +810,7 @@ function startServer({ input = process.stdin, client: injected } = {}) {
           protocolVersion: m.params?.protocolVersion || "2025-06-18",
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "xenoci", version: VERSION },
-          instructions: 'XenoCI rents dedicated Mac mini M4 VMs for builds. Flow: catalog -> quote -> create_order -> show pay_url to the user -> wait_order -> build (artifacts: ["build/*.ipa"] to keep result files) -> on failure build_log mode=failure, fix, build again -> build_artifacts to download results -> list_macs to see remaining time -> extend (pay_url) if needed. There is no return: a Mac ends by itself at ends_at and its VM is deleted, so download results before that. On an error read error.code, error.retryable and error.next. Docs: https://xenoci.com/llms.txt'
+          instructions: 'XenoCI rents dedicated Mac mini M4 VMs for builds. Flow: list_macs (a Mac you already rent can build now) -> otherwise catalog -> quote -> create_order -> show pay_url to the user -> wait_order -> build (artifacts: ["build/*.ipa"] to keep result files) -> on failure build_log mode=failure, fix, build again -> build_artifacts to download results -> list_macs to see remaining time -> extend (pay_url) if needed. There is no return: a Mac ends by itself at ends_at and its VM is deleted, so download results before that. Pass build.dir as the absolute project path. build_artifacts returns links; download them yourself. On an error read error.code, error.retryable and error.next. Docs: https://xenoci.com/llms.txt'
         };
       else if (m.method === "ping")
         result = {};
@@ -832,5 +841,5 @@ function startServer({ input = process.stdin, client: injected } = {}) {
   return rl;
 }
 
-// ../../../../tmp/tmp.8H0SAuTqNi/mcp/bin.mjs
+// ../../../../tmp/tmp.qsPUtKpUu9/mcp/bin.mjs
 startServer();
