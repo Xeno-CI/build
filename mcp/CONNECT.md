@@ -1,5 +1,7 @@
 # xenoci-mcp 5분 연결 (Claude Code · Codex CLI · Cursor)
 
+XenoCast CLI(`xenocast`)로 설치·로그인하고 MCP를 연결합니다. 옛 이름 `xenoci`도 같은 명령으로 동작하고, 이미 `xenoci`로 등록한 MCP 설정(`mcpServers.xenoci`, `[mcp_servers.xenoci]`)은 그대로 씁니다.
+
 ## 0. AI에게 맡기기 (권장, Node 필요 없음)
 
 https://xenoci.com/app/api-keys 의 "AI에게 맡기는 설치" 상자를 복사해 AI 채팅에 붙여 넣으면 AI가 아래 세 줄을 실행합니다. 사람이 할 일은 AI가 물을 때 콘솔에서 키를 복사하는 것 하나입니다. 키는 대화에도, AI 앱 설정 파일에도 들어가지 않고 사용자만 읽는 `~/.config/xenoci/credentials.json`(Windows `%APPDATA%\xenoci\credentials.json`, `XENOCI_CONFIG_DIR`로 바꿀 수 있음)에만 저장됩니다.
@@ -7,11 +9,12 @@ https://xenoci.com/app/api-keys 의 "AI에게 맡기는 설치" 상자를 복사
 ```sh
 curl -fsSL https://github.com/Xeno-CI/build/releases/latest/download/install.sh | sh
 # Windows PowerShell: irm https://github.com/Xeno-CI/build/releases/latest/download/install.ps1 | iex
-xenoci init --from-clipboard --client codex     # claude | cursor | all, 생략하면 설치된 앱 자동 감지
-xenoci doctor                                    # 키·연결·권한·빌린 맥·MCP 서버·앱 설정, 문제면 종료 코드 1
+xenocast login                                     # 로그인 방식 선택: 1 API 키 붙여넣기 / 2 브라우저로 로그인
+xenocast init --from-clipboard --client codex     # (키 방식) claude | cursor | all, 생략하면 설치된 앱 자동 감지
+xenocast doctor                                    # 키·연결·권한·빌린 맥·MCP 서버·앱 설정, 문제면 종료 코드 1
 ```
 
-`init`은 키를 `GET /api/ci/v1/me`로 확인한 뒤 저장하고, 고른 앱의 설정에 `xenoci` 항목 하나만 넣습니다(다른 항목은 그대로). 넣는 명령은 `xenoci mcp`입니다.
+`init`은 키를 `GET /api/ci/v1/me`로 확인한 뒤 저장하고, 고른 앱의 설정에 `xenoci` 항목 하나만 넣습니다(다른 항목은 그대로). 넣는 명령은 `xenocast mcp`입니다.
 
 | 앱 | 파일 |
 |---|---|
@@ -19,7 +22,13 @@ xenoci doctor                                    # 키·연결·권한·빌린 �
 | Codex CLI | `~/.codex/config.toml`(`CODEX_HOME`)의 `[mcp_servers.xenoci]` |
 | Cursor | `~/.cursor/mcp.json`의 `mcpServers.xenoci` |
 
-키를 명령줄(`--key`)로는 받지 않습니다. 클립보드를 못 읽는 환경은 `xenoci init`(입력이 안 보이는 프롬프트) 또는 `xenoci init --key-stdin`. 앱을 다시 시작하면 MCP 도구가 보입니다.
+로그인은 두 가지이고 저장 위치와 MCP 설정은 같습니다.
+
+- **API 키 붙여넣기**: 콘솔에서 키를 복사하고 `xenocast init --from-clipboard`(또는 `xenocast login --key-stdin`).
+- **브라우저로 로그인**: `xenocast login --device`. 터미널에 나온 링크(https://xenoci.com/app/device?code=…)를 열어 로그인하고, 화면의 코드가 터미널과 같은지 확인한 뒤 승인합니다. 승인하면 고른 프로젝트에 새 API 키(권한 read·build·order, 이름 `xenoci-cli <호스트> <날짜>`)가 만들어져 이 기기에만 전달되고, 링크는 10분 뒤 만료됩니다. `xenocast logout`은 저장된 로그인을 지우고, 브라우저 로그인으로 만든 키는 서버에서도 폐기합니다.
+- 터미널이 아닌 곳(CI, 에이전트)은 선택 화면을 띄우지 않습니다: `XENOCI_API_KEY` 환경 변수, `--key-stdin`, 또는 `--device`를 씁니다. `xenocast doctor`가 어느 방식으로 로그인했는지 보여 줍니다.
+
+키를 명령줄(`--key`)로는 받지 않습니다. 클립보드를 못 읽는 환경은 `xenocast init`(입력이 안 보이는 프롬프트) 또는 `xenocast init --key-stdin`. 앱을 다시 시작하면 MCP 도구가 보입니다.
 
 아래 1–3은 Node와 `npx`로 직접 설정하는 방법입니다.
 
@@ -130,4 +139,4 @@ tool_timeout_sec = 600          # build가 끝날 때까지 기다림
 | `xcode_not_available` | 그 Xcode 없음 → `options` 중 하나로 다시 |
 | `xcode_not_on_any_mac` | 내 맥에 그 Xcode 없음 → `mac.set_xcode` 후 다시 `build.submit` |
 
-전체 오류 코드: https://xenoci.com/docs/errors · CLI로 같은 일을 하려면 `xenoci --help`.
+전체 오류 코드: https://xenoci.com/docs/errors · CLI로 같은 일을 하려면 `xenocast --help`.
