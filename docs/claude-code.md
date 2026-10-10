@@ -8,11 +8,11 @@ https://gist.github.com/001005HS/54abb387f86e9007ceda038e4629ef6f
 
 ```sh
 curl -fsSL https://github.com/Xeno-CI/build/releases/latest/download/install.sh | sh
-xenocast login --key-stdin            # 키 붙여넣기 후 Enter (https://xenoci.com/app/api-keys)
+xenocast setup --key-stdin            # 키 붙여넣기 후 Enter, Ctrl+D (https://xenoci.com/app/api-keys): 키 저장 + MCP 등록 + 연결 확인 빌드
 claude mcp list                       # xenoci: ... - ✔ Connected
 ```
 
-Claude Code가 설치돼 있으면 `xenocast login`이 `~/.claude.json`에 `xenoci`를 함께 등록합니다("MCP 설정: claude → ..."). 목록에 없을 때만 직접 등록하세요:
+Claude Code가 설치돼 있으면 `xenocast setup`(또는 `xenocast login`)이 `~/.claude.json`에 `xenoci`를 함께 등록합니다("MCP 설정: claude → ..."). 목록에 없을 때만 직접 등록하세요:
 
 ```sh
 claude mcp add --transport stdio --scope user xenoci -- "$(which xenocast)" mcp

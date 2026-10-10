@@ -83,6 +83,7 @@ AI가 API 키 하나로 맥 확인·주문(결제 링크는 사람에게)·빌�
 Node 없이 CLI로 연결(키가 대화·설정 파일에 남지 않음): 콘솔에서 키를 복사한 뒤
 
 ```sh
+printf '%s\n' "$XENOCI_KEY" | xenocast setup --no-tui --key-stdin   # 한 번에: 키 저장 + 설치된 AI 에이전트(Claude Code, Cursor, Codex, opencode, OMO) MCP 등록(백업 후 병합) + doctor + 연결 확인 빌드
 xenocast init --from-clipboard --client codex   # claude | cursor | all: 키 확인·저장 + 그 앱의 MCP 설정(xenocast mcp)
 xenocast doctor                                  # 연결·권한·빌린 맥·MCP 점검
 ```
@@ -97,7 +98,7 @@ codex mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build 
 ```
 
 공개 MCP 도구 12개: account, plan, mac, build, status, logs, diagnose, signing, ship, sim, secrets, webhooks. 기존 개별 이름은 숨겨진 호환 별칭입니다. `action: "describe", for_action: "<action>"`으로 정확한 스키마를 읽고 action을 선택합니다. iOS 인수는 `input` 안에 넣으며, `build` action `submit`의 `script`·`dir`·`repo` 등은 최상위에 둡니다.
-CLI는 기존 명령 체계를 유지합니다: `xenocast init | doctor | mcp | catalog | order | orders | wait | macs | extend | xcode | reset | setup | job | waitlist | secrets | build | status | logs | artifacts | cancel | errors | whoami | webhooks | watch | ios`, 모든 명령 `--json`. 견적·주문의 `--start`(MCP `start`)로 미래 시작 시각의 재고와 금액을 봅니다. 빌드 결과물(ipa·xcarchive·xcresult)은 `xenocast build --artifacts 'build/*.ipa'`로 남기고 `xenocast artifacts <id> --out ./dist`(MCP `logs` action `artifacts`)로 받습니다(7일 보관).
+CLI는 기존 명령 체계를 유지합니다: `xenocast setup | init | doctor | mcp | catalog | order | orders | wait | macs | extend | xcode | reset | setup | job | waitlist | secrets | build | status | logs | artifacts | cancel | errors | whoami | webhooks | watch | ios`, 모든 명령 `--json`. 견적·주문의 `--start`(MCP `start`)로 미래 시작 시각의 재고와 금액을 봅니다. 빌드 결과물(ipa·xcarchive·xcresult)은 `xenocast build --artifacts 'build/*.ipa'`로 남기고 `xenocast artifacts <id> --out ./dist`(MCP `logs` action `artifacts`)로 받습니다(7일 보관).
 오류는 `{"error":{"code","message","retryable","next","request_id",...}}` 형식이고 `next`에 다음 요청이 들어 있습니다.
 
 AI용 안내(llms.txt): https://gist.github.com/001005HS/d6a483152886b14e07bda46e90da304d · OpenAPI: https://xenoci.com/openapi.json · 오류 코드: https://xenoci.com/docs/errors
