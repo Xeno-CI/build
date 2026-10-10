@@ -69,16 +69,13 @@ xcodebuild -version
   xenocast logout [--keep-key]                        저장된 로그인 삭제 (브라우저 로그인으로 만든 키는 서버에서도 폐기)
   xenocast init --from-clipboard [--client codex|claude|cursor|all|none]   복사한 API 키를 확인·저장하고 AI 앱 MCP 설정을 씁니다
                                                     (--key-stdin: 표준 입력으로 키, --api-url, 기본은 설치된 앱 자동 감지)
-  xenocast setup --no-tui [--agent auto|claude|cursor|codex|opencode|all] [--key-stdin] [--no-build] [--mac rt_...]
-                                                    한 번에 세팅: 키 확인·저장 → 설치된 AI 에이전트에 MCP 등록(기존 설정 백업 후 병합, 이미 있으면 건너뜀)
-                                                    → doctor → 빌린 Mac에서 연결 확인 빌드(sw_vers, xcodebuild -version). 키는 --key-stdin 또는 XENOCI_API_KEY
+  xenocast setup --no-tui [--agent auto|claude|cursor|codex|opencode|omo|all] [--key-stdin] [--no-build]   한 번에 세팅: 키 저장 → 설치된 AI 에이전트 MCP 등록(백업 후 병합, 있으면 건너뜀) → doctor → 연결 확인 빌드
   xenocast doctor                                     키·연결·권한·빌린 맥·MCP 서버·AI 앱 설정 점검 (문제 있으면 종료 코드 1)
   xenocast mcp                                        MCP 서버(stdio). AI 앱 설정에서 부르는 명령, Node 필요 없음
   xenocast ios --help                                iOS 앱·빌드·시뮬레이터·산출물 API
   xenocast diagnose <rb_...>                          실패한 빌드의 관측 오류와 다음 행동
   xenocast preflight --input preflight.json           업로드 또는 저장소 빌드 전 검사
-  xenocast build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력
-                                                    (--script 'xcodebuild -version'처럼 명령 문자열도 됨: 파일이 없고 공백·셸 기호가 있으면 명령으로 실행)
+  xenocast build --script ./ci.sh                     현재 폴더를 올려 빌드하고 끝날 때까지 로그 출력 (명령 문자열도 됨: --script 'xcodebuild -version')
                                                     (git 없어도 됨, 두 번째부터 바뀐 파일만, 종료 코드 = 빌드 종료 코드)
   xenocast build --script ./ci.sh --dir ./app         지정한 폴더를 올려 빌드
   xenocast build --script ./ci.sh --repo owner/name --ref main [--github-token-env GITHUB_TOKEN]
