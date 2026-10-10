@@ -8,7 +8,7 @@ pipeline {
   stages {
     stage('XenoCI build') {
       steps {
-        withCredentials([string(credentialsId: 'XENOCI_API_KEY', variable: 'XENOCI_API_KEY')]) {
+        withCredentials([string(credentialsId: 'XENOCAST_TOKEN', variable: 'XENOCAST_TOKEN')]) {
           sh 'bash integrations/jenkins/xenoci-build.sh'
         }
       }

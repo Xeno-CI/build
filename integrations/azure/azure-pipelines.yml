@@ -18,7 +18,7 @@ steps:
   - bash: bash integrations/azure/run.sh
     displayName: Submit and wait for XenoCI build
     env:
-      XENOCI_API_KEY: $(XENOCI_API_KEY)
+      XENOCAST_TOKEN: $(XENOCAST_TOKEN)
       XENOCI_API_URL: $(XENOCI_API_URL)
       BUILD_SOURCESDIRECTORY: $(Build.SourcesDirectory)
       BUILD_REPOSITORY_NAME: $(Build.Repository.Name)

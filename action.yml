@@ -1,9 +1,14 @@
 name: XenoCI 빌드
-description: XenoCI 임대 macOS VM에서 빌드를 실행합니다 (API 키 하나, GitHub App 설치 불필요)
+description: XenoCI 임대 macOS VM에서 빌드를 실행합니다 (CI 토큰 하나, GitHub App 설치 불필요)
 inputs:
+  token:
+    description: "XenoCast CI 토큰. 로그인한 컴퓨터에서 xenocast token --ci --raw | gh secret set XENOCAST_TOKEN 으로 만들고 secrets.XENOCAST_TOKEN 을 넘깁니다(빌드 전용, 서명 주문 연장 불가)"
+    required: false
+    default: ''
   api-key:
-    description: XenoCI API 키 (조직 시크릿 XENOCI_API_KEY 권장)
-    required: true
+    description: "종료됨. API 키는 더 이상 받지 않습니다(값을 주면 단계가 실패합니다). token 을 쓰세요"
+    required: false
+    default: ''
   script:
     description: 빌드 스크립트 파일 경로 (저장소 기준)
     required: true
@@ -34,7 +39,10 @@ runs:
   steps:
     - shell: bash
       env:
-        XENOCI_API_KEY: ${{ inputs.api-key }}
+        # The CI token: masked first, then the CLI exchanges it at /session/refresh for a short access token kept in
+        # memory only (never printed or stored). Build logs the CLI prints mask token-shaped strings as well.
+        XENOCAST_TOKEN: ${{ inputs.token }}
+        XENO_API_KEY_INPUT: ${{ inputs.api-key }}
         XENOCI_API_URL: ${{ inputs.api-url }}
         # The job's own GITHUB_TOKEN: read access to this repository only, expires when the job ends.
         # XenoCI keeps it in memory for this build, never stores or logs it, and the VM deletes it after the fetch.
@@ -55,7 +63,9 @@ runs:
         XENO_GITHUB_STATUS: ${{ inputs.github-status }}
         XENO_NOTIFY_URL: ${{ inputs.notify-url }}
       run: |
-        if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다. https://xenoci.com/app/api-keys 에서 키를 만들고 저장소(또는 조직) 시크릿 XENOCI_API_KEY에 넣은 뒤 워크플로의 with: api-key 에 secrets.XENOCI_API_KEY 를 넘겨 주세요."; exit 1; fi
+        if [ -n "$XENOCAST_TOKEN" ]; then echo "::add-mask::$XENOCAST_TOKEN"; fi
+        if [ -n "$XENO_API_KEY_INPUT" ]; then echo "::add-mask::$XENO_API_KEY_INPUT"; echo "::error title=XenoCast API 키 종료::API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요"; exit 1; fi
+        if [ -z "$XENOCAST_TOKEN" ]; then echo "::error title=XenoCast 토큰 없음::token 입력이 비어 있습니다. 로그인한 컴퓨터에서 xenocast token --ci --raw | gh secret set XENOCAST_TOKEN --repo $XENO_REPO 로 시크릿을 만들고 with: token 에 secrets.XENOCAST_TOKEN 을 넘겨 주세요. 포크에서 온 PR에는 시크릿이 전달되지 않습니다"; exit 1; fi
         if [ "$XENO_SOURCE" != git ] && [ "$XENO_SOURCE" != upload ]; then echo "::error title=XenoCI source 값 오류::source는 git 또는 upload입니다 (받은 값: $XENO_SOURCE)"; exit 1; fi
         echo "::add-mask::$XENO_GITHUB_TOKEN"
         args=(build --script "$XENO_SCRIPT" --timeout "$XENO_TIMEOUT" --priority "$XENO_PRIORITY" --wait --commit "$XENO_REF")

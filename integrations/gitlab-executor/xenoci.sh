@@ -2,7 +2,7 @@
 # XenoCI rental API client for shell integrations (GitLab custom executor, Buildkite plugin).
 #
 # One build = upload a folder (gzip tar) -> POST /builds {script, upload_id} -> follow the text log.
-# Needs bash, curl, jq, tar, gzip. The key is read from XENOCI_API_KEY and never printed.
+# Needs bash, curl, jq, tar, gzip. The CI token is read from XENOCAST_TOKEN, exchanged for an access token, never printed.
 #
 # xenoci_run sets XENOCI_OUTCOME (success | build_failure | system_failure), XENOCI_EXIT_CODE (the build's
 # exit code, or 1) and XENOCI_BUILD_ID, so each CI can map them to its own exit codes.
@@ -17,15 +17,20 @@ XENOCI_EXIT_CODE=1
 xenoci_log() { printf '%s: %s\n' "$XENOCI_LOG_PREFIX" "$*" >&2; }
 
 xenoci_require() {
-  [[ -n "${XENOCI_API_KEY:-}" ]] || { xenoci_log 'XENOCI_API_KEY is not set'; return 1; }
   local tool
   for tool in curl jq tar gzip; do command -v "$tool" >/dev/null || { xenoci_log "$tool is required"; return 1; }; done
+  # XenoCast 1.4: a CI token (XENOCAST_TOKEN, from `xenocast token --ci`) is exchanged at /session/refresh for a short
+  # access token kept in this process only; the token goes to curl on stdin, never in arguments or output. API keys are retired.
+  if [ -n "${XENOCI_API_KEY:-}${XENO_API_KEY:-}" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요" >&2; return 1; fi
+  if [ -z "${XENOCAST_TOKEN:-}" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: XENOCAST_TOKEN is not set (CI token: xenocast token --ci)" >&2; return 1; fi
+  XENOCI_ACCESS_TOKEN=$(printf '{"refresh_token":"%s"}' "$XENOCAST_TOKEN" | curl --silent --show-error -X POST -H 'Content-Type: application/json' --data-binary @- "$XENOCI_API_BASE/session/refresh" | sed -n 's/.*"access_token":"\([A-Za-z0-9_-]*\)".*/\1/p') || XENOCI_ACCESS_TOKEN=
+  if [ -z "$XENOCI_ACCESS_TOKEN" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: invalid_token: XENOCAST_TOKEN was rejected (revoked or expired); make a new one with xenocast token --ci" >&2; return 1; fi
 }
 
 # xenoci_call <out-file> <curl args...>: prints the HTTP status; the body goes to <out-file>.
 xenoci_call() {
   curl --silent --show-error --connect-timeout 20 -o "$1" -w '%{http_code}' \
-    -H "Authorization: Bearer ${XENOCI_API_KEY}" -H 'XenoCI-Error-Format: 2' "${@:2}"
+    -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" -H 'XenoCI-Error-Format: 2' "${@:2}"
 }
 
 xenoci_error() { jq -r '.error.code // .error_detail.code // .error // "unknown_error" | tostring' "$1" 2>/dev/null || echo unknown_error; }
@@ -61,7 +66,7 @@ xenoci_follow() {
   local id="$1" tmp="$2" offset=0 state code
   while :; do
     if ! curl --silent --show-error --fail --connect-timeout 20 --retry 3 --retry-connrefused -D "$tmp/headers" -o "$tmp/chunk" \
-      -H "Authorization: Bearer ${XENOCI_API_KEY}" "$XENOCI_API_BASE/builds/$id/log?format=text&offset=$offset&wait=20"; then
+      -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" "$XENOCI_API_BASE/builds/$id/log?format=text&offset=$offset&wait=20"; then
       xenoci_log "log request failed for $id"; XENOCI_OUTCOME=system_failure; return
     fi
     cat "$tmp/chunk"

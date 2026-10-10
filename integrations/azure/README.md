@@ -6,13 +6,13 @@ Uploads the commit Azure Pipelines checked out, runs the build script (default `
 
 ## 설정 (3단계)
 
-1. XenoCI에서 `read`·`build` 권한 API 키를 만듭니다.
-2. **Pipelines → Library → Variable groups**에 `XENOCI_API_KEY`를 비밀로 추가합니다.
+1. 로그인한 컴퓨터에서 `xenocast token --ci --raw`로 CI 토큰(빌드 전용)을 만듭니다.
+2. **Pipelines → Library → Variable groups**에 `XENOCAST_TOKEN`을 비밀로 추가합니다(포크 PR 빌드에 비밀을 주지 않음).
 3. `azure-pipelines.yml`을 저장소 루트에, `run.sh`를 `integrations/azure/run.sh`에 둡니다. 선택 변수: `XENOCI_BUILD_SCRIPT`(기본 `bash ci.sh`), `XENOCI_API_URL`(기본 `https://xenoci.com`).
 
 ## 사용하는 API 호출 / API calls
 
-기본 주소 `https://xenoci.com/api/ci/v1`, 모든 요청 `Authorization: Bearer $XENOCI_API_KEY`.
+기본 주소 `https://xenoci.com/api/ci/v1`. 스크립트가 `XENOCAST_TOKEN`을 `POST /session/refresh`에서 접근 토큰으로 바꾼 뒤 모든 요청에 `Authorization: Bearer <접근 토큰>`을 씁니다. 토큰은 출력하지 않습니다.
 
 1. `POST /uploads/tar?project=<Build.Repository.Name>` — `git archive HEAD | gzip` from `Build.SourcesDirectory`.
 2. `POST /builds` — `{"upload_id":"up_…","commit":"<Build.SourceVersion>","script":"bash ci.sh","pr":17}`.

@@ -6,7 +6,7 @@ English: Uploads the commit Jenkins checked out, runs the build script (default 
 
 ## 설정 / Setup
 
-1. Jenkins **Secret text** credential, ID `XENOCI_API_KEY` (API key with `build` and `read` scopes).
+1. Jenkins **Secret text** credential, ID `XENOCAST_TOKEN` (a build-only CI token from `xenocast token --ci --raw`). Do not give credentials to fork pull request builds (GitHub Branch Source "Trust": Nobody or Collaborators).
 2. Use `integrations/jenkins/Jenkinsfile` as the pipeline script (copy `xenoci-build.sh` to the same path in your repository).
 3. Agent needs `bash`, `curl`, `node`, `git`, `gzip` and a git checkout of the job.
 4. Optional environment: `XENOCI_BUILD_SCRIPT` (command run on the Mac, default `bash ci.sh`), `XENOCI_API_URL` (default `https://xenoci.com/api/ci/v1`).
@@ -21,5 +21,5 @@ POST /api/ci/v1/builds                             {"script":"bash ci.sh","uploa
 GET  /api/ci/v1/builds/<id>/log?format=text&offset=<n>&wait=20   (repeat; X-Next-Offset, X-Build-State, X-Exit-Code)
 ```
 
-`pr` is an integer and is sent only when `CHANGE_ID` is a number. All calls use `Authorization: Bearer $XENOCI_API_KEY`.
+`pr` is an integer and is sent only when `CHANGE_ID` is a number. The script exchanges `XENOCAST_TOKEN` at `POST /session/refresh` for an access token and uses it as `Authorization: Bearer`; no token is printed.
 

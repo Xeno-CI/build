@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${XENOCI_API_KEY:?Set the secret variable XENOCI_API_KEY}"
 api="${XENOCI_API_URL:-https://xenoci.com}"
 api="${api%/}/api/ci/v1"
+# XenoCast 1.4: a CI token (XENOCAST_TOKEN, from `xenocast token --ci`) is exchanged at /session/refresh for a short
+# access token kept in this process only; the token goes to curl on stdin, never in arguments or output. API keys are retired.
+if [ -n "${XENOCI_API_KEY:-}${XENO_API_KEY:-}" ]; then printf '%s\n' "xenoci: API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요" >&2; exit 2; fi
+if [ -z "${XENOCAST_TOKEN:-}" ]; then printf '%s\n' "xenoci: XENOCAST_TOKEN is not set (CI token: xenocast token --ci)" >&2; exit 2; fi
+XENOCI_ACCESS_TOKEN=$(printf '{"refresh_token":"%s"}' "$XENOCAST_TOKEN" | curl --silent --show-error -X POST -H 'Content-Type: application/json' --data-binary @- "$api/session/refresh" | sed -n 's/.*"access_token":"\([A-Za-z0-9_-]*\)".*/\1/p') || XENOCI_ACCESS_TOKEN=
+if [ -z "$XENOCI_ACCESS_TOKEN" ]; then printf '%s\n' "xenoci: invalid_token: XENOCAST_TOKEN was rejected (revoked or expired); make a new one with xenocast token --ci" >&2; exit 2; fi
 
 src="${BUILD_SOURCESDIRECTORY:-$PWD}"
 script="${XENOCI_BUILD_SCRIPT:-bash ci.sh}"
@@ -14,7 +19,7 @@ trap 'rm -rf "$work"' EXIT
 git -C "$src" archive --format=tar HEAD | gzip -c >"$work/source.tar.gz"
 project="$(printf '%s' "${BUILD_REPOSITORY_NAME:-$(basename "$src")}" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-64)"
 if ! status="$(curl --silent --show-error --output "$work/upload.json" --write-out '%{http_code}' \
-  -H "Authorization: Bearer ${XENOCI_API_KEY}" -H 'XenoCI-Error-Format: 2' -H 'Content-Type: application/gzip' \
+  -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" -H 'XenoCI-Error-Format: 2' -H 'Content-Type: application/gzip' \
   -X POST "$api/uploads/tar?project=$project" --data-binary "@$work/source.tar.gz")"; then
   echo 'XenoCI upload failed: network_error' >&2
   exit 1
@@ -35,7 +40,7 @@ body="$(UPLOAD_JSON="$work/upload.json" SCRIPT="$script" node -e '
 
 response_file="$work/build.json"
 if ! status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-  -H "Authorization: Bearer ${XENOCI_API_KEY}" \
+  -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" \
   -H 'Content-Type: application/json' \
   -H 'XenoCI-Error-Format: 2' \
   -X POST "$api/builds" --data "$body")"; then
@@ -53,7 +58,7 @@ echo "XenoCI build: $build_id"
 while true; do
   response_file="$work/wait.json"
   if ! status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
-    -H "Authorization: Bearer ${XENOCI_API_KEY}" \
+    -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" \
     -H 'XenoCI-Error-Format: 2' \
     "$api/builds/$build_id/wait?timeout=60")"; then
     echo 'XenoCI build wait failed: network_error' >&2
