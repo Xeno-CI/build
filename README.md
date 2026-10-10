@@ -11,6 +11,8 @@ name: macOS build
 on: [push, workflow_dispatch]
 jobs:
   build:
+    # 자체 러너가 있으면 [self-hosted]로 바꾸세요
+    # GitHub 호스팅 러너(ubuntu-latest 등)를 쓰면 GitHub Actions 요금이 나올 수 있습니다
     runs-on: ubuntu-latest
     steps:
       - uses: xeno-ci/build@v1
