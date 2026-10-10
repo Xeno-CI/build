@@ -75,6 +75,13 @@ curl만 쓰는 방법(REST 예시)과 오류 코드: https://xenoci.com/agent-st
 
 AI가 API 키 하나로 맥 확인·주문(결제 링크는 사람에게)·빌드·실패 로그 분석·재빌드·연장까지 합니다. 사람은 결제 링크에서 동의·결제만 합니다.
 
+Node 없이 CLI로 연결(키가 대화·설정 파일에 남지 않음): 콘솔에서 키를 복사한 뒤
+
+```sh
+xenoci init --from-clipboard --client codex   # claude | cursor | all: 키 확인·저장 + 그 앱의 MCP 설정(xenoci mcp)
+xenoci doctor                                  # 연결·권한·빌린 맥·MCP 점검
+```
+
 ```sh
 claude mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build xenoci-mcp
 codex mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build xenoci-mcp
@@ -84,10 +91,12 @@ codex mcp add xenoci --env XENOCI_API_KEY=... -- npx -y -p github:xeno-ci/build 
 { "mcpServers": { "xenoci": { "command": "npx", "args": ["-y", "-p", "github:xeno-ci/build", "xenoci-mcp"], "env": { "XENOCI_API_KEY": "..." } } } }
 ```
 
-도구: catalog, quote, create_order, order_status, wait_order, list_macs, extend, reset_macs, set_xcode, update_mac, job_status, join_waitlist, build, build_artifacts, build_status, wait_build, build_log, cancel_build, list_errors, secrets, account.
-CLI도 같습니다: `xenoci catalog | order | orders | wait | macs | extend | xcode | reset | setup | job | waitlist | secrets | build | status | logs | artifacts | cancel | errors | whoami | ios`, 모든 명령 `--json`. 견적·주문의 `--start`(MCP `start`)로 미래 시작 시각의 재고와 금액을 봅니다. 빌드 결과물(ipa·xcarchive·xcresult)은 `xenoci build --artifacts 'build/*.ipa'`로 남기고 `xenoci artifacts <id> --out ./dist`(MCP `build_artifacts`)로 받습니다(7일 보관).
+공개 MCP 도구 12개: account, plan, mac, build, status, logs, diagnose, signing, ship, sim, secrets, webhooks. 기존 개별 이름은 숨겨진 호환 별칭입니다. `action: "describe", for_action: "<action>"`으로 정확한 스키마를 읽고 action을 선택합니다. iOS 인수는 `input` 안에 넣으며, `build` action `submit`의 `script`·`dir`·`repo` 등은 최상위에 둡니다.
+CLI는 기존 명령 체계를 유지합니다: `xenoci init | doctor | mcp | catalog | order | orders | wait | macs | extend | xcode | reset | setup | job | waitlist | secrets | build | status | logs | artifacts | cancel | errors | whoami | webhooks | watch | ios`, 모든 명령 `--json`. 견적·주문의 `--start`(MCP `start`)로 미래 시작 시각의 재고와 금액을 봅니다. 빌드 결과물(ipa·xcarchive·xcresult)은 `xenoci build --artifacts 'build/*.ipa'`로 남기고 `xenoci artifacts <id> --out ./dist`(MCP `logs` action `artifacts`)로 받습니다(7일 보관).
 오류는 `{"error":{"code","message","retryable","next","request_id",...}}` 형식이고 `next`에 다음 요청이 들어 있습니다.
 
 AI용 안내(llms.txt): https://gist.github.com/001005HS/d6a483152886b14e07bda46e90da304d · OpenAPI: https://xenoci.com/openapi.json · 오류 코드: https://xenoci.com/docs/errors
 
-환경 변수: `XENOCI_API_KEY`(필수), `XENOCI_API_URL`(기본 https://xenoci.com).
+환경 변수: `XENOCI_API_KEY`(xenoci init으로 저장했으면 생략 가능, 환경 변수가 우선; 콘솔의 `xeno_ci_` 프로젝트 키로 CI와 iOS 공용), `XENOCI_API_URL`(기본 https://xenoci.com), `XENOCI_CONFIG_DIR`(저장 위치). 기존 `xeno_ak_`는 iOS 호환 엔드포인트 전용입니다. iOS 권한 매핑: `read=R`, `build=W/S+createApps`, `secrets=V`, `manage=V/G/A/D`.
+
+CLI 진단은 `xenoci diagnose <rb_id>`, 사전 점검은 `xenoci preflight --input preflight.json`입니다. 관리형 iOS는 `xenoci ios archive|sign|ship --app ID --input action.json --idempotency-key KEY`로 각각 archive, 서명 export, TestFlight 업로드를 요청합니다. 접수와 실제 업로드 성공은 다르므로 종료 상태와 Apple 결과를 확인하세요. 상세: https://xenoci.com/ios-guide.md
