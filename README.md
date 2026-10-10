@@ -4,7 +4,7 @@
 
 API 키: https://xenoci.com/app/api-keys
 
-**AI로 약 3분 셋업:** Mac을 빌리고 API 키를 만든 뒤, 쓰는 AI 에이전트에 이 주소 하나만 보내세요: https://gist.github.com/001005HS/54abb387f86e9007ceda038e4629ef6f
+**AI로 약 3분 셋업:** Mac을 빌리고 API 키를 만든 뒤, 쓰는 AI 에이전트에 이 주소 하나만 보내세요: https://github.com/Xeno-CI/build/blob/main/SETUP.md
 → [docs/quickstart-ai.md](docs/quickstart-ai.md) · [Claude Code 연결](docs/claude-code.md)
 
 ## GitHub Actions

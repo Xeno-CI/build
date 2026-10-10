@@ -2,7 +2,7 @@
 
 가장 짧은 방법: Claude Code에 아래 주소를 보내세요. Claude Code가 설치·로그인·MCP 등록·연결 확인 빌드까지 실행합니다.
 
-https://gist.github.com/001005HS/54abb387f86e9007ceda038e4629ef6f
+https://github.com/Xeno-CI/build/blob/main/SETUP.md
 
 직접 하려면(키는 표준 입력으로 저장되고 MCP 설정에는 들어가지 않습니다):
 
