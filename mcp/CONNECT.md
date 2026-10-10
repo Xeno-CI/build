@@ -115,6 +115,7 @@ tool_timeout_sec = 600          # build가 끝날 때까지 기다림
 2. `plan.catalog` → `plan.quote` → `plan.order` : 결제 링크(`pay_url`)를 사람에게 보여 줌. 도구는 결제할 수 없음.
 3. `status.order (wait: true)` : `ready`가 될 때까지 다시 부름.
 4. `build.submit`: `dir`에 프로젝트 폴더의 절대 경로, `script`에 예: `xcodebuild -scheme App -destination generic/platform=iOS -archivePath build/App.xcarchive archive CODE_SIGNING_ALLOWED=NO`, `artifacts: ["build/App.xcarchive"]`(폴더는 zip으로 돌아옴). 이 결과는 unsigned archive이며 IPA가 아닙니다. 관리형 iOS 서명은 `build.archive` 후 `signing.export`를 사용하며 Apple 자격증명과 권한이 필요합니다.
+   빌드 ID가 바로 돌아옵니다(빌드는 비동기). `status.build`로 `phase`(queued, receiving_source, building, finished), `elapsed_s`, `log_tail`을 확인하고, 끝나면 `exit_code`와 `duration_s`를 읽습니다. 끝날 때 알림은 `webhooks.add`(`build.completed`)로 받습니다. 끝까지 기다리는 호출이 필요하면 `wait: true`.
 5. 실패하면 `logs.tail`(`mode: "failure"`) → 고쳐서 다시 `build.submit`.
 6. `logs.artifacts` : 도구는 링크만 돌려줌. 에이전트가 각 `download_url`(15분 유효, 키 필요 없음)을 `curl -fLo dist/<name> "<download_url>"`로 받아 `sha256`을 비교.
 
