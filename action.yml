@@ -1,14 +1,13 @@
 name: XenoCI 빌드
-description: XenoCI 임대 macOS VM에서 빌드를 실행합니다 (CI 토큰 하나, GitHub App 설치 불필요)
+description: XenoCI 임대 macOS VM에서 빌드를 실행합니다 (빌드 전용 CI 토큰, GitHub App 설치 불필요)
 inputs:
   token:
-    description: "XenoCast CI 토큰. 로그인한 컴퓨터에서 xenocast token --ci --raw | gh secret set XENOCAST_TOKEN 으로 만들고 secrets.XENOCAST_TOKEN 을 넘깁니다(빌드 전용, 서명 주문 연장 불가)"
+    description: 빌드 전용 CI 토큰 (시크릿 XENOCAST_TOKEN). xenocast token --ci 로 만듭니다. 서명·주문·연장은 되지 않습니다.
     required: false
-    default: ''
   api-key:
-    description: "종료됨. API 키는 더 이상 받지 않습니다(값을 주면 단계가 실패합니다). token 을 쓰세요"
+    description: 종료되었습니다. token(시크릿 XENOCAST_TOKEN)을 쓰세요.
     required: false
-    default: ''
+    deprecationMessage: API 키는 종료되었습니다. xenocast token --ci --raw | gh secret set XENOCAST_TOKEN 으로 CI 토큰을 만들고 token에 secrets.XENOCAST_TOKEN 을 넘기세요. https://github.com/Xeno-CI/xenocast/blob/main/SETUP.md
   script:
     description: 빌드 스크립트 파일 경로 (저장소 기준)
     required: true
@@ -39,10 +38,8 @@ runs:
   steps:
     - shell: bash
       env:
-        # The CI token: masked first, then the CLI exchanges it at /session/refresh for a short access token kept in
-        # memory only (never printed or stored). Build logs the CLI prints mask token-shaped strings as well.
         XENOCAST_TOKEN: ${{ inputs.token }}
-        XENO_API_KEY_INPUT: ${{ inputs.api-key }}
+        XENOCI_API_KEY: ${{ inputs.api-key }}
         XENOCI_API_URL: ${{ inputs.api-url }}
         # The job's own GITHUB_TOKEN: read access to this repository only, expires when the job ends.
         # XenoCI keeps it in memory for this build, never stores or logs it, and the VM deletes it after the fetch.
@@ -63,9 +60,8 @@ runs:
         XENO_GITHUB_STATUS: ${{ inputs.github-status }}
         XENO_NOTIFY_URL: ${{ inputs.notify-url }}
       run: |
-        if [ -n "$XENOCAST_TOKEN" ]; then echo "::add-mask::$XENOCAST_TOKEN"; fi
-        if [ -n "$XENO_API_KEY_INPUT" ]; then echo "::add-mask::$XENO_API_KEY_INPUT"; echo "::error title=XenoCast API 키 종료::API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요"; exit 1; fi
-        if [ -z "$XENOCAST_TOKEN" ]; then echo "::error title=XenoCast 토큰 없음::token 입력이 비어 있습니다. 로그인한 컴퓨터에서 xenocast token --ci --raw | gh secret set XENOCAST_TOKEN --repo $XENO_REPO 로 시크릿을 만들고 with: token 에 secrets.XENOCAST_TOKEN 을 넘겨 주세요. 포크에서 온 PR에는 시크릿이 전달되지 않습니다"; exit 1; fi
+        if [ -n "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 종료::API 키는 종료되었습니다: xenocast token --ci --raw | gh secret set XENOCAST_TOKEN 으로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣고, with: token 에 secrets.XENOCAST_TOKEN 을 넘기세요. https://github.com/Xeno-CI/xenocast/blob/main/SETUP.md"; exit 1; fi
+        if [ -z "$XENOCAST_TOKEN" ]; then echo "::error title=XenoCI CI 토큰 없음::token 입력이 비어 있습니다. 로그인한 컴퓨터에서 xenocast token --ci --raw | gh secret set XENOCAST_TOKEN 으로 빌드 전용 CI 토큰을 만들고 with: token 에 secrets.XENOCAST_TOKEN 을 넘기세요. https://github.com/Xeno-CI/xenocast/blob/main/SETUP.md"; exit 1; fi
         if [ "$XENO_SOURCE" != git ] && [ "$XENO_SOURCE" != upload ]; then echo "::error title=XenoCI source 값 오류::source는 git 또는 upload입니다 (받은 값: $XENO_SOURCE)"; exit 1; fi
         echo "::add-mask::$XENO_GITHUB_TOKEN"
         args=(build --script "$XENO_SCRIPT" --timeout "$XENO_TIMEOUT" --priority "$XENO_PRIORITY" --wait --commit "$XENO_REF")
@@ -78,6 +74,13 @@ runs:
         # The job token posts the commit status; with source: git it is the same token the Mac clones with.
         if [ "$XENO_GITHUB_STATUS" = true ]; then args+=(--github-status-token-env XENO_GITHUB_TOKEN); fi
         if [ -n "$XENO_NOTIFY_URL" ]; then args+=(--notify "$XENO_NOTIFY_URL"); fi
+        # Exchange the build-only CI token in this shell. Mask it and the ephemeral access token.
+        # XENOCAST_TOKEN stays the CI token: the CLI exchanges it again and never writes a credential store.
+        echo "::add-mask::$XENOCAST_TOKEN"
+        if ! xenocast_refresh="$(curl --silent --show-error --fail-with-body -X POST "$XENOCI_API_URL/api/ci/v1/session/refresh" -H 'Content-Type: application/json' --data "$(jq -nc --arg refresh "$XENOCAST_TOKEN" '{refresh_token:$refresh}')")"; then echo "::error title=XenoCI CI 토큰 교환 실패::POST /api/ci/v1/session/refresh 가 거절했습니다. 토큰이 폐기됐거나 만료됐으면 xenocast token --ci 로 다시 만드세요."; exit 1; fi
+        if ! xenocast_access="$(printf '%s' "$xenocast_refresh" | jq -er '.access_token')"; then echo "::error title=XenoCI CI 토큰 교환 실패::응답에 access_token이 없습니다."; exit 1; fi
+        echo "::add-mask::$xenocast_access"
+        unset xenocast_refresh xenocast_access
         # exec: on a cancelled job the runner signals only this step's own process (SIGINT, then SIGTERM, then kills the
         # tree). Without exec that is bash, which waits on node and never passes the signal on, so the CLI could not cancel
         # the build and the Mac stayed busy until the timeout. Nothing may follow this line; node's exit code is the step's.

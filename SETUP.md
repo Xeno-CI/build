@@ -7,7 +7,7 @@ XenoCast 셋업
 
 규칙
 - 아래 명령은 사용자에게 보여 주기만 하지 말고 네 셸 도구로 직접 실행한다. 단계마다 확인할 것을 확인한 뒤에 다음 단계로 간다.
-- 사용자에게 부탁하는 것은 두 가지뿐이다: 로그인 링크 승인, 빌드 대상. 나머지는 네가 알아서 한다.
+- 사용자가 직접 하는 일은 GitHub 로그인 승인과 웹에서 Mac 구매뿐이다. 설치와 CI 연결은 AI가 실행하며 필요한 빌드 대상·CI·시크릿 저장 위치만 확인한다.
 - API 키는 종료되었다. 사용자에게 키를 묻지 않는다. 로그인은 `xenocast login`이 연 링크에서 사용자가 GitHub으로 승인하는 방식뿐이다.
 - 토큰(`xeno_at_`, `xeno_rt_`, `xeno_ci_`로 시작하는 값)을 화면, 대화, 로그, 파일, 커밋, 빌드 스크립트에 쓰지 않는다. 로그인은 OS 키체인 또는 암호화 파일에 저장되고 MCP 설정에는 들어가지 않는다.
 - 주문, 결제, 연장은 사용자가 직접 한다. 너는 하지 않는다.
@@ -35,13 +35,13 @@ XenoCast 셋업
    ```
 
    `xenocast-login.err`의 첫 줄은 `{"event":"device_code","verification_uri_complete":"...","user_code":"...","expires_in":600}`이다. 이 줄이 생기면 사용자에게 말한다: "이 링크를 열고 GitHub으로 로그인한 뒤 승인해 주세요: <verification_uri_complete> (화면의 코드가 <user_code>인지 확인)". 가입이 안 돼 있으면 이때 가입된다.
-   로그인 명령이 끝날 때까지 기다린다. 종료 코드 0이면 `xenocast-login.out`의 JSON에서 `account.email`(일부 가려짐)과 `macs`를 확인하고, 두 파일을 지운 뒤 다음으로. 실패하면:
+   로그인 명령이 끝날 때까지 기다린다. 종료 코드 0이면 `xenocast-login.out`의 JSON에서 `account.email_masked`와 `rentals`를 확인하고, 두 파일을 지운 뒤 다음으로. 실패하면:
    - `access_denied`: 사용자가 거부했다. 계속할지 묻고, 원하면 3을 다시 한다.
    - `expired_token`: 10분이 지났다. 3을 한 번 더 하고 이번엔 사용자에게 바로 링크를 전한다.
    - 그 밖: `xenocast-login.err`의 마지막 줄을 사용자에게 보여 준다.
 
 Mac
-4. `xenocast macs`를 실행한다. 빌린 Mac이 한 대 이상이면 다음으로. "빌린 Mac이 없습니다"이면 사용자에게 https://xenoci.com/app/store 에서 Mac을 빌려 달라고 말하고(너는 주문하지 않는다), 결제가 끝났다고 하면 4를 다시 한다.
+4. `xenocast macs`를 실행한다. 빌린 Mac이 한 대 이상이면 다음으로. "Mac을 빌려 주세요"이면 사용자에게 https://xenoci.com/app/store 에서 Mac을 빌려 달라고 말하고(너는 주문하지 않는다), 결제가 끝났다고 하면 4를 다시 한다.
    어떤 Mac 줄 아래에 "남은 시간 6시간 이하"가 보이면 그 줄을 사용자에게 그대로 전한다(연장은 사용자가 한다).
 
 세팅
@@ -76,13 +76,14 @@ Mac
 
 CI 연결
 CI에서는 로그인 대신 CI 토큰을 쓴다. CI 토큰은 빌드 전용이다: 빌드 실행, 상태, 로그, 취소, Mac 목록만 되고 서명, 주문, 연장은 되지 않는다. 기본 만료 90일이고 `xenocast token --ci --revoke <id>` 또는 웹의 로그인된 기기 화면에서 폐기한다.
-C1. 로그인한 컴퓨터에서 토큰을 만들어 화면을 거치지 않고 바로 시크릿에 넣는다. GitHub 저장소라면:
+C1. 먼저 사용하는 CI와 토큰을 넣을 저장소 또는 조직을 사용자에게 확인한다. 로그인한 컴퓨터에서 토큰을 만들어 화면을 거치지 않고 바로 시크릿에 넣는다. GitHub 저장소라면:
 
    ```sh
-   xenocast token --ci --name "owner/name CI" --raw | gh secret set XENOCAST_TOKEN --repo owner/name
+   xenocast token --ci --raw | gh secret set XENOCAST_TOKEN --repo owner/name
+   # 이름과 조직도 같다: xenocast token --ci --name "owner/name CI" --raw | gh secret set XENOCAST_TOKEN --org <org> --visibility all
    ```
 
-   `gh`가 없거나 다른 CI라면 사용자에게 직접 터미널에서 `xenocast token --ci`를 실행해 나온 값을 CI의 비밀 변수 `XENOCAST_TOKEN`에 넣어 달라고 한다. 너는 그 값을 받지도 출력하지도 않는다. 토큰 ID(`ses_...`)만 보고용으로 적는다(`--json`의 `session.id`).
+   GitLab은 `xenocast token --ci --raw | glab variable set XENOCAST_TOKEN --masked --protected`로 넣는다. Jenkins CLI 접근이 있으면 Secret text 자격 XML 생성 파이프의 stdin으로 토큰을 받아 `create-credentials-by-xml system::system::jenkins _`에 전달한다. 토큰을 argv나 임시 파일에 넣지 않는다. 다른 CI는 해당 CLI의 시크릿 stdin 입력을 사용한다. CLI 접근이 없을 때만 사람이 자신의 터미널에서 `xenocast token --ci --raw`를 실행해 해당 CI의 비밀 입력 화면에 넣는다. AI는 그 값을 받지 않는다. `--raw`만 원문을 출력하며 기본·`--json` 출력은 안전한 세션 정보뿐이다.
 C2. 쓰는 CI에 맞는 설정을 넣는다:
    - GitHub Actions: `runs-on: macos-*` 잡을 `xeno-ci/build@v1` 액션으로 바꾼다.
 
@@ -111,10 +112,10 @@ C2. 쓰는 CI에 맞는 설정을 넣는다:
      ```
 
      `xenocast build`는 체크아웃된 작업 폴더를 올려 빌드한다
-   - Jenkins: Credentials에 Secret text `xenocast-token`을 만들고
+   - Jenkins: Credentials에 Secret text `XENOCAST_TOKEN`을 만들고
 
      ```groovy
-     withCredentials([string(credentialsId: 'xenocast-token', variable: 'XENOCAST_TOKEN')]) {
+     withCredentials([string(credentialsId: 'XENOCAST_TOKEN', variable: 'XENOCAST_TOKEN')]) {
        sh 'curl -fsSL https://github.com/Xeno-CI/xenocast/releases/latest/download/install.sh | sh'
        sh '~/.local/bin/xenocast build --script ./ci.sh'
      }
@@ -142,7 +143,7 @@ C3. 포크 PR 경고. 공개 저장소에서 남의 코드가 토큰을 읽지 �
      ```
 
    - GitLab은 `XENOCAST_TOKEN`을 Protected로 둬 보호 브랜치에서만 쓰이게 하고, 포크 MR 파이프라인을 상위 프로젝트에서 돌리지 않는다. Jenkins는 포크 PR 빌드에 자격 증명을 주지 않는다(GitHub Branch Source의 "Trust" 설정을 "Nobody" 또는 "Collaborators"로).
-   - CLI와 액션은 토큰 원문을 출력하지 않고, 빌드 로그에 섞여 나온 토큰 모양 문자열도 `xeno_ci_***`처럼 가려서 보여 준다. 그래도 빌드 스크립트에서 `XENOCAST_TOKEN`을 출력하지 않는다.
+   - CLI는 토큰 원문을 출력하지 않고 빌드 로그의 토큰도 `[REDACTED]`로 가린다. 액션은 GitHub의 `::add-mask::`로 CI 토큰과 접근 토큰을 등록한다. 빌드 스크립트에서 `XENOCAST_TOKEN`을 출력하지 않는다.
 C4. 사용자에게 시크릿을 넣은 곳과 토큰 ID를 알리고, 첫 CI 실행의 빌드 ID와 결과를 함께 보고한다.
 
 이후 (방향만)
