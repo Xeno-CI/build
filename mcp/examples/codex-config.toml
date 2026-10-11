@@ -1,7 +1,6 @@
-# ~/.codex/config.toml (or .codex/config.toml in the repository)
+# ~/.codex/config.toml (or .codex/config.toml in the repository). Log in once with `xenocast login`; nothing secret goes here.
 [mcp_servers.xenoci]
 command = "npx"
-args = ["-y", "-p", "github:xeno-ci/build", "xenoci-mcp"]
-env_vars = ["XENOCI_API_KEY"]   # forward the value from Codex's environment; the key is not written here
+args = ["-y", "-p", "github:xeno-ci/xenocast", "xenoci-mcp"]
 startup_timeout_sec = 60        # first npx download
-tool_timeout_sec = 600          # build waits until the build ends
+tool_timeout_sec = 600          # build with wait: true waits until the build ends

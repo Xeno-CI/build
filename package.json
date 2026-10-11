@@ -1,8 +1,8 @@
 {
   "name": "xenoci",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "private": true,
-  "description": "XenoCast CLI for XenoCI: build on a rented Mac mini M4 with one API key (CLI, MCP server, GitHub Action)",
+  "description": "XenoCI GitHub Action (xeno-ci/build). The XenoCast CLI and MCP server moved to github.com/Xeno-CI/xenocast; the bundles here are kept for the Action and old npx configs",
   "type": "module",
   "bin": {
     "xenoci": "dist/xenoci.mjs",
@@ -15,6 +15,7 @@
     "dist/xenoci-mcp.mjs",
     "action.yml",
     "README.md",
+    "SETUP.md",
     "LICENSE"
   ],
   "engines": {

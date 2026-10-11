@@ -3,7 +3,12 @@ set -euo pipefail
 
 api_base="${XENO_API_BASE_URL:-https://xenoci.com/api/ci/v1}"
 api_base="${api_base%/}"
-: "${XENO_API_KEY:?Set the XENO_API_KEY CircleCI project secret}"
+# XenoCast 1.4: a CI token (XENOCAST_TOKEN, from `xenocast token --ci`) is exchanged at /session/refresh for a short
+# access token kept in this process only; the token goes to curl on stdin, never in arguments or output. API keys are retired.
+if [ -n "${XENOCI_API_KEY:-}${XENO_API_KEY:-}" ]; then printf '%s\n' "xenoci: API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요" >&2; exit 2; fi
+if [ -z "${XENOCAST_TOKEN:-}" ]; then printf '%s\n' "xenoci: XENOCAST_TOKEN is not set (CI token: xenocast token --ci)" >&2; exit 2; fi
+XENOCI_ACCESS_TOKEN=$(printf '{"refresh_token":"%s"}' "$XENOCAST_TOKEN" | curl --silent --show-error -X POST -H 'Content-Type: application/json' --data-binary @- "$api_base/session/refresh" | sed -n 's/.*"access_token":"\([A-Za-z0-9_-]*\)".*/\1/p') || XENOCI_ACCESS_TOKEN=
+if [ -z "$XENOCI_ACCESS_TOKEN" ]; then printf '%s\n' "xenoci: invalid_token: XENOCAST_TOKEN was rejected (revoked or expired); make a new one with xenocast token --ci" >&2; exit 2; fi
 : "${CIRCLE_SHA1:?CircleCI did not provide CIRCLE_SHA1}"
 
 tmp="$(mktemp -d)"
@@ -15,7 +20,7 @@ error_message() {
 request() {
   local method="$1" url="$2" data="${3-}" code error_code
   local args=(--silent --show-error --output "$body_file" --write-out '%{http_code}' -X "$method"
-    -H "Authorization: Bearer $XENO_API_KEY" -H 'XenoCI-Error-Format: 2' -H 'Accept: application/json')
+    -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" -H 'XenoCI-Error-Format: 2' -H 'Accept: application/json')
   if [[ -n "$data" ]]; then args+=(-H 'Content-Type: application/json' --data "$data"); fi
   if ! code="$(curl "${args[@]}" "$url")"; then printf 'XenoCI request failed: network error\n' >&2; return 1; fi
   if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then
@@ -29,7 +34,7 @@ request() {
 git archive --format=tar HEAD | gzip -c >"$tmp/source.tar.gz"
 project="$(printf '%s' "${CIRCLE_PROJECT_REPONAME:-$(basename "$PWD")}" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-64)"
 if ! code="$(curl --silent --show-error --output "$body_file" --write-out '%{http_code}' -X POST \
-  -H "Authorization: Bearer $XENO_API_KEY" -H 'XenoCI-Error-Format: 2' -H 'Content-Type: application/gzip' \
+  -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" -H 'XenoCI-Error-Format: 2' -H 'Content-Type: application/gzip' \
   --data-binary "@$tmp/source.tar.gz" "$api_base/uploads/tar?project=$project")"; then
   echo 'XenoCI upload failed: network error' >&2; exit 1
 fi

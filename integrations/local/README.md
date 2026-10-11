@@ -4,8 +4,8 @@ English: Archives the repository `HEAD` (without `.git`), uploads it, runs the b
 
 ## 설정 (4단계)
 
-1. XenoCI 콘솔에서 `read`·`build` 권한이 있는 API 키를 만듭니다.
-2. POSIX 셸은 `export XENOCI_API_KEY=...`, PowerShell은 `$env:XENOCI_API_KEY='...'`. 키를 저장소 파일에 쓰지 마세요.
+1. 로그인한 컴퓨터에서 `xenocast token --ci --raw`로 CI 토큰(빌드 전용)을 만듭니다(이 컴퓨터에서 직접 빌드할 거라면 `xenocast build`가 더 간단합니다).
+2. 토큰을 셸 기록에 남기지 않게 비밀 도구로 `XENOCAST_TOKEN` 환경 변수에 넣습니다. 저장소 파일에 쓰지 마세요.
 3. 선택: `XENOCI_BUILD_SCRIPT`(맥에서 실행할 명령, 기본 `bash ci.sh`), `XENOCI_PR`(PR 번호, 숫자만), `XENOCI_PROJECT`, `XENOCI_API_URL`(기본 `https://xenoci.com`).
 4. `sh integrations/local/xenoci-build.sh` 또는 `pwsh -File integrations/local/xenoci-build.ps1`.
 
@@ -17,7 +17,7 @@ English: Archives the repository `HEAD` (without `.git`), uploads it, runs the b
 2. `POST /api/ci/v1/builds` — `{"upload_id":"up_…","commit":"<HEAD SHA>","script":"bash ci.sh","pr":42}`. `pr`은 정수이며 `XENOCI_PR`이 없으면 생략합니다.
 3. `GET /api/ci/v1/builds/<id>/wait?timeout=60` — 끝날 때까지(`succeeded`·`failed`·`cancelled`·`expired`) 반복. 실패면 `failure.summary`를 출력하고 빌드 종료 코드로 끝납니다.
 
-모든 요청: `Authorization: Bearer $XENOCI_API_KEY`, `XenoCI-Error-Format: 2`.
+`XENOCAST_TOKEN`을 `POST /session/refresh`에서 접근 토큰으로 바꾼 뒤 모든 요청: `Authorization: Bearer <접근 토큰>`, `XenoCI-Error-Format: 2`.
 
 ## Makefile 예시
 

@@ -1,7 +1,7 @@
 # XenoCI GitLab custom executor
 
-GitLab job의 스크립트를 빌린 XenoCI 맥에서 실행하는 [custom executor](https://docs.gitlab.com/runner/executors/custom.html)입니다. API 키 하나만 있으면 됩니다(SSH·VM 생성 없음).
-A GitLab Runner custom executor that runs the job on your rented XenoCI Mac with one API key — no SSH, no VM to create.
+GitLab job의 스크립트를 빌린 XenoCI 맥에서 실행하는 [custom executor](https://docs.gitlab.com/runner/executors/custom.html)입니다. CI 토큰 하나만 있으면 됩니다(SSH, VM 생성 없음).
+A GitLab Runner custom executor that runs the job on your rented XenoCI Mac with one CI token, no SSH, no VM to create.
 
 ## 동작 / How it works
 
@@ -20,7 +20,7 @@ A GitLab Runner custom executor that runs the job on your rented XenoCI Mac with
   url = "https://gitlab.com"
   token = "…"
   executor = "custom"
-  environment = ["XENOCI_API_KEY=xk_…"]   # or export it in the runner service environment
+  environment = ["XENOCAST_TOKEN=…"]   # from `xenocast token --ci`; or export it in the runner service environment
   [runners.custom]
     config_exec = "/opt/xenoci/gitlab-executor/config.sh"
     prepare_exec = "/opt/xenoci/gitlab-executor/prepare.sh"
@@ -39,7 +39,7 @@ mac-build:
     - echo "built on XenoCI"               # runs nowhere: the Mac runs XENOCI_BUILD_SCRIPT
 ```
 
-API 키는 러너 설정(`environment`)에 두세요. job 변수로 넣지 않습니다(맥으로 가는 것은 업로드한 폴더와 스크립트뿐).
+CI 토큰(`xenocast token --ci`, 빌드 전용)은 러너 설정(`environment`)에 두세요. job 변수로 넣지 않습니다(맥으로 가는 것은 업로드한 폴더와 스크립트뿐, 포크 MR 파이프라인도 토큰을 볼 수 없음). 러너가 `/session/refresh`에서 접근 토큰으로 바꿔 쓰고 출력하지 않습니다. 예전 `XENOCI_API_KEY`는 종료되었습니다.
 선택 환경 변수: `XENOCI_API_URL`(기본 `https://xenoci.com`), `XENOCI_XCODE`, `XENOCI_TIMEOUT_MIN`.
 
 러너 설치 없이 기존 러너(도커·셸)에서 바로 쓰려면 CLI가 더 간단합니다: `xenoci build --script ./ci.sh` (설치와 옵션: https://github.com/Xeno-CI/build).
