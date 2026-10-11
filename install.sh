@@ -3,7 +3,7 @@
 # (the old address https://github.com/Xeno-CI/build/releases/latest/download/install.sh serves this same file).
 # Downloads the single executable for this OS/CPU from Xeno-CI/xenocast, verifies it against SHA256SUMS, installs
 # `xenocast` and links the old name `xenoci` to it (existing scripts, CI jobs and MCP configs keep working).
-#   XENOCAST_VERSION=v1.4.0    pin a release (default: latest; XENOCI_VERSION works too)
+#   XENOCAST_VERSION=v1.4.1    pin a release (default: latest; XENOCI_VERSION works too)
 #   XENOCI_INSTALL_DIR=/path   install directory (default: /usr/local/bin if writable, else ~/.local/bin)
 #   XENOCI_BASE_URL=url        download from a mirror holding the same release assets (flat folder)
 #   XENOCAST_INSTALL_BASE=url  the host in front of /Xeno-CI/xenocast/releases (default https://github.com)

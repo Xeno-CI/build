@@ -24,7 +24,7 @@ XenoCast 셋업
 
    Windows(PowerShell): `irm https://github.com/Xeno-CI/xenocast/releases/latest/download/install.ps1 | iex`
    설치 명령이 종료 코드 0으로 끝나면 다음으로. 실패하면 설치 출력 전체를 사용자에게 보여 준다.
-2. `xenocast --version`을 실행한다. 버전이 `1.4.0` 이상이면 다음으로. 명령을 못 찾으면 `export PATH="$HOME/.local/bin:$PATH"` 후 다시 확인하고, 그래도 안 되면 1의 출력을 사용자에게 보여 준다.
+2. `xenocast --version`을 실행한다. 버전이 `1.4.1` 이상이면 다음으로. 명령을 못 찾으면 `export PATH="$HOME/.local/bin:$PATH"` 후 다시 확인하고, 그래도 안 되면 1의 출력을 사용자에게 보여 준다.
 
 로그인
 3. `xenocast whoami`를 실행한다. 종료 코드 0이면 이미 로그인돼 있다. 4로 간다.

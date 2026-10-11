@@ -1,6 +1,6 @@
 {
   "name": "xenoci",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "XenoCI GitHub Action (xeno-ci/build). The XenoCast CLI and MCP server moved to github.com/Xeno-CI/xenocast; the bundles here are kept for the Action and old npx configs",
   "type": "module",
