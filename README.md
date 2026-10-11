@@ -5,8 +5,6 @@
   <img src=".github/assets/xenocast-light.svg" alt="XenoCast for GitHub Actions" width="320">
 </picture>
 
-# XenoCast for GitHub Actions
-
 **내 워크플로에서 빌린 Mac으로 바로 빌드**
 
 [![Release](https://img.shields.io/github/v/release/Xeno-CI/build?style=flat-square&color=2563eb)](https://github.com/Xeno-CI/build/releases) [![MIT License](https://img.shields.io/badge/license-MIT-475569?style=flat-square)](LICENSE) [![Docs](https://img.shields.io/badge/docs-xenoci.com-2563eb?style=flat-square)](https://xenoci.com/docs) [![Downloads](https://img.shields.io/github/downloads/Xeno-CI/xenocast/total?style=flat-square&color=475569)](https://github.com/Xeno-CI/xenocast/releases)
@@ -37,9 +35,7 @@ irm https://xenoci.com/install.ps1 | iex
 
 Claude Code, Codex, Cursor, opencode에 그대로 붙여 넣으세요
 
-> https://raw.githubusercontent.com/Xeno-CI/xenocast/main/SETUP.md 를 읽고 이 컴퓨터에 XenoCast를 설정해 줘, GitHub 승인 링크를 보여 주고 빌린 Mac에서 연결 확인 빌드까지 검증해 줘
-
-[셋업 안내](https://raw.githubusercontent.com/Xeno-CI/xenocast/main/SETUP.md)에 현재 릴리스 설치 명령과 오류별 다음 행동이 있어 AI가 지금 바로 전체 설정을 진행할 수 있습니다
+> XenoCI 연결해줘: curl -fsSL https://xenoci.com/install.sh | sh 실행하고 나오는 로그인 링크를 나한테 보여줘
 
 ## 왜 XenoCast
 

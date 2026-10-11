@@ -5,8 +5,6 @@
   <img src=".github/assets/xenocast-light.svg" alt="XenoCast for GitHub Actions" width="320">
 </picture>
 
-# XenoCast for GitHub Actions
-
 **Your workflow, your rented Mac, your build**
 
 [![Release](https://img.shields.io/github/v/release/Xeno-CI/build?style=flat-square&color=2563eb)](https://github.com/Xeno-CI/build/releases) [![MIT License](https://img.shields.io/badge/license-MIT-475569?style=flat-square)](LICENSE) [![Docs](https://img.shields.io/badge/docs-xenoci.com-2563eb?style=flat-square)](https://xenoci.com/docs) [![Downloads](https://img.shields.io/github/downloads/Xeno-CI/xenocast/total?style=flat-square&color=475569)](https://github.com/Xeno-CI/xenocast/releases)
@@ -37,9 +35,7 @@ You need an active [Mac rental](https://xenoci.com/app/store) for the connection
 
 Paste this into Claude Code, Codex, Cursor or opencode
 
-> Read https://raw.githubusercontent.com/Xeno-CI/xenocast/main/SETUP.md and set up XenoCast on this computer, show me the GitHub approval link, and verify the connection build on my rented Mac
-
-The [setup guide](https://raw.githubusercontent.com/Xeno-CI/xenocast/main/SETUP.md) includes the current release installer and recovery steps, so your AI can follow the complete setup now
+> Connect XenoCI: run curl -fsSL https://xenoci.com/install.sh | sh and show me the login link
 
 ## Why XenoCast
 
