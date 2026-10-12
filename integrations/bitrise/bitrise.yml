@@ -9,5 +9,7 @@ workflows:
           inputs:
             - content: |-
                 set -eu
+                curl -fsSL https://github.com/Xeno-CI/xenocast/releases/latest/download/install.sh | XENOCI_INSTALL_DIR="$HOME/.local/bin" sh
+                export PATH="$HOME/.local/bin:$PATH"
                 SCRIPT_DIR="${BITRISE_SOURCE_DIR:-$PWD}/integrations/bitrise"
                 exec bash "$SCRIPT_DIR/run.sh"

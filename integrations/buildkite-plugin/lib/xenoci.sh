@@ -1,114 +1,36 @@
 #!/usr/bin/env bash
-# XenoCI rental API client for shell integrations (GitLab custom executor, Buildkite plugin).
-#
-# One build = upload a folder (gzip tar) -> POST /builds {script, upload_id} -> follow the text log.
-# Needs bash, curl, jq, tar, gzip. The CI token is read from XENOCAST_TOKEN, exchanged for an access token, never printed.
-#
-# xenoci_run sets XENOCI_OUTCOME (success | build_failure | system_failure), XENOCI_EXIT_CODE (the build's
-# exit code, or 1) and XENOCI_BUILD_ID, so each CI can map them to its own exit codes.
-
+# Shared GitLab/Buildkite adapter. The CLI sends XENOCI_API_KEY as Bearer to /api/runner/v1, filters uploads and handles cancellation.
+# Keep the installed copies byte-identical to this file.
 XENOCI_API_URL="${XENOCI_API_URL:-https://xenoci.com}"
-XENOCI_API_BASE="${XENOCI_API_URL%/}/api/ci/v1"
 XENOCI_LOG_PREFIX="${XENOCI_LOG_PREFIX:-xenoci}"
 XENOCI_BUILD_ID=""
 XENOCI_OUTCOME=""
 XENOCI_EXIT_CODE=1
-
 xenoci_log() { printf '%s: %s\n' "$XENOCI_LOG_PREFIX" "$*" >&2; }
-
 xenoci_require() {
-  local tool
-  for tool in curl jq tar gzip; do command -v "$tool" >/dev/null || { xenoci_log "$tool is required"; return 1; }; done
-  # XenoCast 1.4: a CI token (XENOCAST_TOKEN, from `xenocast token --ci`) is exchanged at /session/refresh for a short
-  # access token kept in this process only; the token goes to curl on stdin, never in arguments or output. API keys are retired.
-  if [ -n "${XENOCI_API_KEY:-}${XENO_API_KEY:-}" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: API 키는 종료되었습니다: xenocast token --ci 로 CI 토큰을 만들어 XENOCAST_TOKEN 시크릿에 넣으세요" >&2; return 1; fi
-  if [ -z "${XENOCAST_TOKEN:-}" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: XENOCAST_TOKEN is not set (CI token: xenocast token --ci)" >&2; return 1; fi
-  XENOCI_ACCESS_TOKEN=$(printf '{"refresh_token":"%s"}' "$XENOCAST_TOKEN" | curl --silent --show-error -X POST -H 'Content-Type: application/json' --data-binary @- "$XENOCI_API_BASE/session/refresh" | sed -n 's/.*"access_token":"\([A-Za-z0-9_-]*\)".*/\1/p') || XENOCI_ACCESS_TOKEN=
-  if [ -z "$XENOCI_ACCESS_TOKEN" ]; then printf '%s\n' "$XENOCI_LOG_PREFIX: invalid_token: XENOCAST_TOKEN was rejected (revoked or expired); make a new one with xenocast token --ci" >&2; return 1; fi
+  [[ -n "${XENOCI_API_KEY:-}" ]] || { xenoci_log 'Set XENOCI_API_KEY to an API key from the XenoCI console'; return 1; }
+  command -v xenocast >/dev/null || { xenoci_log 'Install xenocast from https://github.com/Xeno-CI/xenocast'; return 1; }
+  command -v jq >/dev/null || { xenoci_log 'jq is required'; return 1; }
 }
-
-# xenoci_call <out-file> <curl args...>: prints the HTTP status; the body goes to <out-file>.
-xenoci_call() {
-  curl --silent --show-error --connect-timeout 20 -o "$1" -w '%{http_code}' \
-    -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" -H 'XenoCI-Error-Format: 2' "${@:2}"
-}
-
-xenoci_error() { jq -r '.error.code // .error_detail.code // .error // "unknown_error" | tostring' "$1" 2>/dev/null || echo unknown_error; }
-
-# xenoci_upload <dir> <project> <tmp-dir>: prints the upload id. File modes travel in the tar, so an
-# executable ./ci.sh stays executable on the Mac; the server also skips .git, .build, DerivedData, Pods.
-xenoci_upload() {
-  local dir="$1" project="$2" tmp="$3" status
-  project="$(printf '%s' "$project" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-64)"
-  tar -C "$dir" --exclude=./.git -cf - . | gzip -c >"$tmp/source.tar.gz"
-  status="$(xenoci_call "$tmp/upload.json" -X POST -H 'Content-Type: application/gzip' \
-    --data-binary "@$tmp/source.tar.gz" "$XENOCI_API_BASE/uploads/tar?project=${project:-source}")" || { xenoci_log 'upload request failed'; return 1; }
-  [[ "$status" == 2* ]] || { xenoci_log "upload failed ($(xenoci_error "$tmp/upload.json"))"; return 1; }
-  jq -er '.upload_id' "$tmp/upload.json"
-}
-
-# xenoci_submit <request-json-file> <tmp-dir>: prints the build id (rb_...).
-xenoci_submit() {
-  local status
-  status="$(xenoci_call "$2/build.json" -X POST -H 'Content-Type: application/json' --data-binary "@$1" "$XENOCI_API_BASE/builds")" \
-    || { xenoci_log 'build submission request failed'; return 1; }
-  [[ "$status" == 2* ]] || { xenoci_log "build submission failed ($(xenoci_error "$2/build.json"))"; return 1; }
-  jq -er '.id' "$2/build.json"
-}
-
-xenoci_cancel() {
-  [[ -n "$1" ]] || return 0
-  xenoci_call /dev/null -X POST "$XENOCI_API_BASE/builds/$1/cancel" >/dev/null || true
-}
-
-# xenoci_follow <build-id> <tmp-dir>: streams the log to stdout until the build ends; sets XENOCI_OUTCOME.
-xenoci_follow() {
-  local id="$1" tmp="$2" offset=0 state code
-  while :; do
-    if ! curl --silent --show-error --fail --connect-timeout 20 --retry 3 --retry-connrefused -D "$tmp/headers" -o "$tmp/chunk" \
-      -H "Authorization: Bearer ${XENOCI_ACCESS_TOKEN}" "$XENOCI_API_BASE/builds/$id/log?format=text&offset=$offset&wait=20"; then
-      xenoci_log "log request failed for $id"; XENOCI_OUTCOME=system_failure; return
-    fi
-    cat "$tmp/chunk"
-    offset="$(tr -d '\r' <"$tmp/headers" | awk -F': ' 'tolower($1)=="x-next-offset"{v=$2} END{print v}')"
-    state="$(tr -d '\r' <"$tmp/headers" | awk -F': ' 'tolower($1)=="x-build-state"{v=$2} END{print v}')"
-    case "$state" in
-      succeeded) xenoci_log "build $id succeeded"; XENOCI_OUTCOME=success; XENOCI_EXIT_CODE=0; return ;;
-      failed|cancelled|expired)
-        xenoci_call "$tmp/final.json" "$XENOCI_API_BASE/builds/$id" >/dev/null || true
-        xenoci_log "build $id $state: $(jq -r '.failure.summary // "no failure summary"' "$tmp/final.json" 2>/dev/null)"
-        code="$(jq -r '.exit_code // empty' "$tmp/final.json" 2>/dev/null)"
-        XENOCI_OUTCOME=build_failure; XENOCI_EXIT_CODE=1
-        [[ "$code" =~ ^[0-9]+$ && "$code" -ge 1 && "$code" -le 255 ]] && XENOCI_EXIT_CODE="$code"
-        return ;;
-    esac
-    [[ "$offset" =~ ^[0-9]+$ ]] || { xenoci_log "unexpected log response for $id"; XENOCI_OUTCOME=system_failure; return; }
-  done
-}
-
-# xenoci_run <dir> <project> <script> [pr] [commit]: upload, submit, follow. Optional XENOCI_XCODE and
-# XENOCI_TIMEOUT_MIN go into the request. A SIGTERM/SIGINT while waiting (job cancelled in the CI)
-# cancels the remote build so the rented Mac is freed.
 xenoci_run() {
-  local dir="$1" project="$2" script="$3" pr="${4:-}" commit="${5:-}" tmp upload
+  local dir="$1" script="$2" tmp pid code
   XENOCI_OUTCOME=system_failure; XENOCI_EXIT_CODE=1; XENOCI_BUILD_ID=""
   xenoci_require || return 0
-  tmp="$(mktemp -d)"
-  [[ "$pr" =~ ^[1-9][0-9]*$ ]] || pr=""
-  [[ "$commit" =~ ^[0-9a-fA-F]{7,40}$ ]] || commit=""
-  if upload="$(xenoci_upload "$dir" "$project" "$tmp")"; then
-    jq -n --arg script "$script" --arg upload "$upload" --arg pr "$pr" --arg commit "$commit" \
-      --arg xcode "${XENOCI_XCODE:-}" --arg timeout "${XENOCI_TIMEOUT_MIN:-}" \
-      '{script:$script, upload_id:$upload}
-       + (if $pr == "" then {} else {pr:($pr|tonumber)} end) + (if $commit == "" then {} else {commit:$commit} end)
-       + (if $xcode == "" then {} else {xcode:$xcode} end) + (if $timeout == "" then {} else {timeout_min:($timeout|tonumber)} end)' >"$tmp/request.json"
-    if XENOCI_BUILD_ID="$(xenoci_submit "$tmp/request.json" "$tmp")"; then
-      xenoci_log "build $XENOCI_BUILD_ID submitted"
-      trap 'xenoci_log "stopped: cancelling $XENOCI_BUILD_ID"; xenoci_cancel "$XENOCI_BUILD_ID"; exit 143' TERM
-      trap 'xenoci_log "stopped: cancelling $XENOCI_BUILD_ID"; xenoci_cancel "$XENOCI_BUILD_ID"; exit 130' INT
-      xenoci_follow "$XENOCI_BUILD_ID" "$tmp"
-      trap - TERM INT
-    fi
+  local args=(build --dir "$dir" --script "$script" --json)
+  [[ -z "${XENOCI_XCODE:-}" ]] || args+=(--xcode "$XENOCI_XCODE")
+  [[ -z "${XENOCI_TIMEOUT_MIN:-}" ]] || args+=(--timeout "$XENOCI_TIMEOUT_MIN")
+  tmp="$(mktemp)"
+  XENOCI_API_URL="${XENOCI_API_URL%/api/ci/v1}" xenocast "${args[@]}" >"$tmp" &
+  pid=$!
+  trap 'kill -TERM "$pid" 2>/dev/null || true; wait "$pid" || true; rm -f "$tmp"; exit 143' TERM
+  trap 'kill -INT "$pid" 2>/dev/null || true; wait "$pid" || true; rm -f "$tmp"; exit 130' INT
+  if wait "$pid"; then code=0; else code=$?; fi
+  trap - TERM INT
+  XENOCI_BUILD_ID="$(jq -r '.id // empty' "$tmp")"
+  if [[ -z "$XENOCI_BUILD_ID" && "$code" != 0 ]]; then jq -r '.error.code // "client_error"' "$tmp" >&2; fi
+  XENOCI_EXIT_CODE="$code"
+  if [[ "$code" = 0 ]]; then XENOCI_OUTCOME=success
+  elif [[ -n "$XENOCI_BUILD_ID" ]]; then XENOCI_OUTCOME=build_failure
   fi
-  rm -rf "$tmp"
+  rm -f "$tmp"
 }

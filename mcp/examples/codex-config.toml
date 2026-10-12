@@ -1,4 +1,4 @@
-# ~/.codex/config.toml (or .codex/config.toml in the repository). Log in once with `xenocast login`; nothing secret goes here.
+# ~/.codex/config.toml (or .codex/config.toml in the repository). Save the console API key once with `xenocast setup`; nothing secret goes here.
 [mcp_servers.xenoci]
 command = "npx"
 args = ["-y", "-p", "github:xeno-ci/xenocast", "xenoci-mcp"]

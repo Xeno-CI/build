@@ -1,5 +1,5 @@
 name: xenoci
-description: Run a Buildkite step on a rented XenoCI Mac (upload the checkout, run the command, stream the log)
+description: Run a Buildkite step on a XenoCI macOS VM (upload the checkout, run the command, stream the log)
 author: https://xenoci.com
 requirements:
   - bash
