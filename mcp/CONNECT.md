@@ -1,6 +1,6 @@
 # xenoci MCP 연결 (Claude Code, Codex CLI, Cursor)
 
-XenoCast CLI(`xenocast`)를 설치하고 콘솔에서 발급한 API 키를 넣은 뒤 MCP를 연결합니다. 인증은 API 키(`xci_live_…`) 하나뿐입니다. MCP 설정 파일에는 키를 넣지 않습니다. MCP 서버는 `XENOCI_API_KEY` 또는 이 컴퓨터에 저장된 키(OS 키체인 또는 암호화 파일)를 씁니다. 옛 이름 `xenoci`도 같은 명령으로 동작하고, 이미 `xenoci`로 등록한 MCP 설정은 그대로 씁니다
+XenoCast CLI(`xenocast`)를 설치하고 콘솔에서 발급한 API 키를 넣은 뒤 MCP를 연결합니다. 잡 도구의 인증은 API 키(`xci_live_…`)입니다, 조직 관리 도구만 따로 관리자 키(`xci_admin_…`)를 씁니다. MCP 설정 파일에는 키를 넣지 않습니다. MCP 서버는 `XENOCI_API_KEY` 또는 이 컴퓨터에 저장된 키(OS 키체인 또는 암호화 파일)를 씁니다. 옛 이름 `xenoci`도 같은 명령으로 동작하고, 이미 `xenoci`로 등록한 MCP 설정은 그대로 씁니다
 
 ## 0. AI에게 맡기기 (권장, Node 필요 없음)
 

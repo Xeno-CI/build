@@ -11,7 +11,7 @@ XenoCast 셋업
 
 규칙
 - 아래 명령은 사용자에게 보여 주기만 하지 말고 네 셸 도구로 직접 실행한다. 단계마다 확인할 것을 확인한 뒤에 다음 단계로 간다
-- 인증은 콘솔에서 발급한 API 키(`xci_live_…`) 하나뿐이다. 요청 헤더는 `Authorization: Bearer <키>`, 환경 변수 이름은 `XENOCI_API_KEY`
+- 잡을 보내는 인증은 콘솔에서 발급한 API 키(`xci_live_…`)다, 조직 관리 명령 `xenocast admin`과 MCP 관리 도구만 따로 관리자 키(`xci_admin_…`, `XENOCI_ADMIN_KEY`)를 쓴다. 요청 헤더는 `Authorization: Bearer <키>`, 환경 변수 이름은 `XENOCI_API_KEY`
 - 키를 대화로 받지 않는다. 키는 비밀 저장소에서 셸 변수로만 꺼낸다
 - 키를 화면, 대화, 로그, 파일, 커밋, 빌드 스크립트, MCP 설정에 쓰지 않는다. `echo`로 키를 찍지 않는다
 - 충전과 결제는 사용자가 콘솔에서 직접 한다. 너는 하지 않는다
