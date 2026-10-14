@@ -71,8 +71,12 @@ case ":$PATH:" in *":$dir:"*) ;; *) echo "add to PATH: export PATH=\"$dir:\$PATH
 if [ "$no_setup" = 0 ]; then
   # stdin is /dev/null so `curl | sh` cannot feed the script body, or any later pipe, to setup. Only when no key was
   # given and a person is at a terminal does setup read the key from /dev/tty (hidden prompt), never from the pipe.
+  # The terminal's own device (tty <&2, e.g. /dev/ttys003), not the /dev/tty alias: on macOS the installed executable
+  # never sees key input on a /dev/tty stdin (qa-air 0548: the hidden prompt hung through a paste and Enter).
   if [ -z "${XENOCI_API_KEY:-}" ] && [ -t 2 ] && { : </dev/tty; } 2>/dev/null; then
-    "$dir/xenocast" setup --runner2 --from-installer </dev/tty
+    tdev=$(tty <&2 2>/dev/null) || tdev=/dev/tty
+    case "$tdev" in /dev/*) [ -r "$tdev" ] && [ -w "$tdev" ] || tdev=/dev/tty ;; *) tdev=/dev/tty ;; esac
+    "$dir/xenocast" setup --runner2 --from-installer <"$tdev"
   else
     "$dir/xenocast" setup --no-tui --runner2 --from-installer </dev/null
   fi
