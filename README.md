@@ -5,6 +5,18 @@ XenoCI의 기본 사용법은 CLI와 MCP입니다. 셋업은 https://github.com/
 - 이 Action은 GitHub 러너(`ubuntu-latest` 등)에서 잡을 XenoCI VM으로 보내는 방식입니다. `runs-on`으로 지정하는 셀프 호스티드 러너가 아니며, `runs-on` 연동은 연기됐습니다
 - GitHub App 설치는 필요 없습니다
 
+## 본인 터미널에서 CLI 설치와 로그인
+
+아래 명령을 순서대로 실행하고 `xenocast login`의 가려진 입력에 콘솔에서 발급한 API 키를 넣습니다
+
+```sh
+curl -fsSL https://github.com/Xeno-CI/xenocast/releases/latest/download/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+xenocast login
+```
+
+새 터미널에서도 명령을 쓰려면 위 `export PATH` 줄을 사용하는 셸의 설정 파일(`~/.zshrc` 또는 `~/.bashrc`)에 추가합니다
+
 ## 준비
 
 1. 콘솔 https://xenoci.com/console 에서 크레딧을 충전하고 API 키(`xci_live_…`)를 발급합니다
@@ -29,7 +41,9 @@ jobs:
           artifacts: build/*.ipa
 ```
 
-Action은 키를 `::add-mask::`로 가린 뒤 CLI로 `/api/runner/v1`에 `Authorization: Bearer <키>`로 잡을 보냅니다. 토큰 교환 단계는 없습니다. 잡마다 새 macOS VM에서 돌고 끝나면 지워지며, 시작한 분마다 1분으로 과금해 조직 잔액(USD)에서 차감합니다. 10초는 1분, 1분 1초는 2분입니다
+Action은 키를 `::add-mask::`로 가린 뒤 CLI로 `/api/runner/v1`에 `Authorization: Bearer <키>`로 잡을 보냅니다, 토큰 교환 단계는 없습니다, 잡마다 새 macOS VM에서 돌고 끝나면 지워지며 시작한 분마다 1분으로 과금해 조직 잔액(USD)에서 차감합니다
+
+10초는 1분, 1분 1초는 2분으로 계산합니다
 
 ## 입력
 
