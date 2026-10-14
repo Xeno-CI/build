@@ -59,4 +59,4 @@ XenoCast 셋업
 부가 기능: 원격 빌드 Action
 GitHub Actions에서 쓰려면 사용자가 저장소 시크릿 `XENOCI_API_KEY`에 키를 넣고(너는 키를 받지 않는다) 워크플로에 `uses: Xeno-CI/build@v1`과 `with: api-key: ${{ secrets.XENOCI_API_KEY }}`, `script: ./ci.sh`를 쓴다. GitHub 러너가 잡을 XenoCI macOS VM으로 보내는 방식이고 `runs-on` 러너가 아니다. 포크 PR을 `pull_request_target`에서 체크아웃해 키와 함께 실행하지 않는다. 자세한 내용: https://github.com/Xeno-CI/build
 
-문서 https://xenoci.com/docs/agents/cli, MCP https://xenoci.com/docs/agents/mcp
+문서 https://xenoci.com/docs/agents/xenocast, MCP https://xenoci.com/docs/agents/xenocast#ai-앱에서-쓸-때
