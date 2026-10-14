@@ -33,10 +33,11 @@ XenoCast 셋업
 3. `xenocast whoami`를 실행한다. 종료 코드 0이면 이 컴퓨터에 키가 이미 저장돼 있다. 4로 간다
    `api_key_required`이면 키를 비밀 저장소에서 꺼낸다. 사용자에게 어디에 넣었는지 한 번 묻고(키 값은 묻지 않는다) 맞는 명령으로 셸 변수 `XENOCI_API_KEY`에 담는다:
    - 이미 환경 변수 `XENOCI_API_KEY`가 있으면 그대로 쓴다
+   - 키만 저장하려면 `printf %s "$XENOCI_API_KEY" | xenocast config set api-key`(표준 입력으로 받는다, 명령 인자로 넘기지 않는다). `xenocast login`은 사람이 터미널에서 쓰는 가린 입력이라 네 셸에서는 진행되지 않는다
    - macOS 키체인: `export XENOCI_API_KEY="$(security find-generic-password -a "$USER" -s XENOCI_API_KEY -w)"`
    - 1Password CLI: `export XENOCI_API_KEY="$(op read 'op://<보관함>/<항목>/credential')"`
    - 그 밖의 비밀 저장소: 그 도구의 읽기 명령 출력을 `XENOCI_API_KEY`에 담는다
-   아직 넣지 않았다면 사용자에게 말한다: "콘솔 https://xenoci.com/console 의 API 키 화면에서 키를 발급해 비밀 저장소에 `XENOCI_API_KEY` 이름으로 넣어 주세요(macOS는 터미널에서 `security add-generic-password -a "$USER" -s XENOCI_API_KEY -w` 후 키 붙여 넣기). 키를 대화창에 붙여 넣지 마세요" 사용자가 끝냈다고 하면 3을 다시 한다
+   아직 넣지 않았다면 사용자에게 말한다: "콘솔 https://xenoci.com/console/keys 의 API 키 화면에서 키를 발급해 비밀 저장소에 `XENOCI_API_KEY` 이름으로 넣어 주세요(macOS는 터미널에서 `security add-generic-password -a "$USER" -s XENOCI_API_KEY -w` 후 키 붙여 넣기). 키를 대화창에 붙여 넣지 마세요" 사용자가 끝냈다고 하면 3을 다시 한다
    `invalid_api_key`이면 키가 폐기됐거나 만료됐다. 콘솔에서 새 키를 발급해 비밀 저장소의 값을 바꾸게 한다
 
 세팅
