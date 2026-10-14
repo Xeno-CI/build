@@ -98,7 +98,7 @@ tool_timeout_sec = 600
 1. `list_runners`: 쓸 수 있는 러너와 분당 단가
 2. `build`: `dir`에 프로젝트 폴더의 절대 경로, `script`에 빌드 명령, `artifacts: ["build/App.xcarchive"]`. 잡 ID가 바로 돌아옵니다
 3. `status`(`id`): 상태, 금액, 마지막 로그 줄
-4. `logs`(`id`, `out: "./dist"`): 전체 로그와 결과물을 파일로 저장
+4. `logs`(`id`, `out: "./dist"`, `artifacts: true`): 전체 로그와 결과물을 파일로 저장(`artifacts`를 빼면 로그만 저장)
 5. 멈추려면 `cancel`(`id`)
 
 전체 문서: https://xenoci.com/docs/agents/xenocast#ai-앱에서-쓸-때, CLI로 같은 일을 하려면 `xenocast --help`
