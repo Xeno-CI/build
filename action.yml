@@ -23,6 +23,9 @@ inputs:
   api-url:
     description: API 주소
     default: https://xenoci.com
+  env:
+    description: "빌드 스크립트에 넘길 환경 변수, 한 줄에 NAME=${{ secrets.X }} 하나(여러 줄). 값은 XenoCI 가 저장하거나 돌려주지 않고 로그에서 *** 로 가립니다"
+    default: ''
 runs:
   using: composite
   steps:
@@ -40,6 +43,7 @@ runs:
         # On a pull request github.sha is GitHub's temporary merge commit; build the PR's own head commit.
         XENO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         XENO_ACTION_PATH: ${{ github.action_path }}
+        XENO_ENV: ${{ inputs.env }}
       run: |
         # One credential: the console API key (xci_live_…). The CLI sends it as Authorization: Bearer to /api/runner/v1;
         # there is no token exchange. The key is masked before anything else can print it.
@@ -52,6 +56,20 @@ runs:
         if [ "$XENO_SOURCE" = upload ]; then args+=(--dir "${GITHUB_WORKSPACE:-.}"); else args+=(--ref "$XENO_REF"); fi
         if [ -n "$XENO_XCODE" ]; then args+=(--xcode "$XENO_XCODE"); fi
         if [ -n "$XENO_ARTIFACTS" ]; then args+=(--artifacts "$XENO_ARTIFACTS"); fi
+        # env: one NAME=VALUE per line. Each value is masked in this step's log first; the variable reaches the CLI through
+        # its environment (--env NAME), never on the command line.
+        if [ -n "$XENO_ENV" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="$(printf %s "$line" | tr -d '\r')"
+            [ -z "${line//[[:space:]]/}" ] && continue
+            name="${line%%=*}"; value="${line#*=}"
+            if [ "$name" = "$line" ] || ! [[ "$name" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { [[ "$name" == XENOCI_* ]] && [[ "$name" != XENOCI_SCHEME && "$name" != XENOCI_XCODE && "$name" != XENOCI_SIMULATOR ]]; }; then echo "::error title=XenoCI env 입력 오류::env 는 한 줄에 NAME=값 하나입니다, 이름은 영문 대문자, 숫자, _ 이고 XENOCI_ 로 시작할 수 없습니다(레시피용 XENOCI_SCHEME, XENOCI_XCODE, XENOCI_SIMULATOR 제외)"; exit 1; fi
+            if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+            export "$name=$value"
+            args+=(--env "$name")
+          done <<< "$XENO_ENV"
+        fi
+        unset XENO_ENV
         # exec: on a cancelled job the runner signals only this step's own process (SIGINT, then SIGTERM, then kills the
         # tree). Without exec that is bash, which waits on node and never passes the signal on, so the CLI could not cancel
         # the job and the VM stayed busy until the timeout. Nothing may follow this line; node's exit code is the step's.
