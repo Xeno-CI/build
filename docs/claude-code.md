@@ -20,4 +20,4 @@ Claude Code가 설치돼 있으면 `xenocast setup`이 `~/.claude.json`에 `xeno
 claude mcp add --transport stdio --scope user xenoci -- "$(which xenocast)" mcp
 ```
 
-Claude Code를 다시 시작하면 `xenoci` MCP 도구 8개(build, status, cancel, logs, list_runners, whoami, credits, usage)가 보입니다. 다른 설정 방식: [mcp/CONNECT.md](../mcp/CONNECT.md), 처음부터 전체 흐름: [quickstart-ai.md](quickstart-ai.md)
+Claude Code를 다시 시작하면 `xenoci` MCP 도구 11개(build, status, cancel, logs, list_runners, whoami, credits, usage, failure, compare, search_log)가 보입니다. 다른 설정 방식: [mcp/CONNECT.md](../mcp/CONNECT.md), 처음부터 전체 흐름: [quickstart-ai.md](quickstart-ai.md)

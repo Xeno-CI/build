@@ -81,7 +81,7 @@ tool_timeout_sec = 600
 
 ## 2. 연결 확인
 
-공개 MCP 도구는 8개입니다: `build`, `status`, `cancel`, `logs`, `list_runners`, `whoami`, `credits`, `usage`. 키가 없어도 도구 목록은 같습니다. 목록에 없는 이름은 JSON-RPC `-32602`입니다
+공개 MCP 도구는 11개입니다: `build`, `status`, `cancel`, `logs`, `list_runners`, `whoami`, `credits`, `usage`, `failure`, `compare`, `search_log`. 키가 없어도 도구 목록은 같습니다. 목록에 없는 이름은 JSON-RPC `-32602`입니다
 
 에이전트에게 "xenoci whoami 도구를 불러 줘"라고 합니다. 키의 조직과 워크스페이스가 보이면 됩니다. 오류가 나면 `error.code`를 봅니다
 
@@ -101,4 +101,4 @@ tool_timeout_sec = 600
 4. `logs`(`id`, `out: "./dist"`): 전체 로그와 결과물을 파일로 저장
 5. 멈추려면 `cancel`(`id`)
 
-전체 문서: https://xenoci.com/docs/agents/mcp, CLI로 같은 일을 하려면 `xenocast --help`
+전체 문서: https://xenoci.com/docs/agents/xenocast#ai-앱에서-쓸-때, CLI로 같은 일을 하려면 `xenocast --help`
