@@ -1,6 +1,6 @@
 # AI로 셋업
 
-1. XenoCI 콘솔(https://xenoci.com/console)에서 크레딧을 충전하고 API 키 화면에서 키를 발급합니다
+1. XenoCI [콘솔](https://xenoci.com/console)에서 크레딧을 충전하고 API 키 화면에서 키를 발급합니다
 2. 키를 비밀 저장소에 `XENOCI_API_KEY` 이름으로 넣습니다(macOS는 터미널에서 `security add-generic-password -a "$USER" -s XENOCI_API_KEY -w` 후 키 붙여 넣기, 1Password 등도 됩니다). 키를 대화창에 붙여 넣지 않습니다
 3. 쓰는 AI 에이전트(Claude Code, Codex, Cursor, opencode, OMO 등 셸 명령을 실행할 수 있는 것)에 아래 주소 하나만 보냅니다
 

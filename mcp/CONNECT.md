@@ -8,6 +8,7 @@ AI 에이전트에 https://github.com/Xeno-CI/xenocast/blob/main/SETUP.md 를 �
 
 ```sh
 curl -fsSL https://github.com/Xeno-CI/xenocast/releases/latest/download/install.sh | XENOCAST_NO_SETUP=1 sh
+export PATH="$HOME/.local/bin:$PATH"   # install.sh 는 ~/.local/bin 에 설치하고 PATH 는 바꾸지 않음
 # Windows PowerShell: irm https://github.com/Xeno-CI/xenocast/releases/latest/download/install.ps1 | iex
 export XENOCI_API_KEY="$(security find-generic-password -a "$USER" -s XENOCI_API_KEY -w)"   # 비밀 저장소에서 키 꺼내기(macOS 예)
 xenocast setup --no-tui --key-env XENOCI_API_KEY   # 키 확인 + 키 저장 + 설치된 AI 앱에 xenoci 등록 + MCP 서버 확인
@@ -21,6 +22,9 @@ unset XENOCI_API_KEY
 | Claude Code | `~/.claude.json`의 `mcpServers.xenoci` |
 | Codex CLI | `~/.codex/config.toml`(`CODEX_HOME`)의 `[mcp_servers.xenoci]` |
 | Cursor | `~/.cursor/mcp.json`의 `mcpServers.xenoci` |
+| Claude 데스크톱 | `claude_desktop_config.json`(macOS `~/Library/Application Support/Claude/`, Windows `%APPDATA%\Claude\`, Linux `~/.config/Claude/`)의 `mcpServers.xenoci` |
+| OpenCode | `~/.config/opencode/opencode.json`(`XDG_CONFIG_HOME`)의 `mcp.xenoci` |
+| OmO | `~/.omo/agent/mcp.json`(`OMO_CODING_AGENT_DIR`)의 `mcpServers.xenoci` |
 
 키
 - `xenocast setup --key-env XENOCI_API_KEY`: 환경 변수의 키를 확인한 뒤 저장합니다. 키만 저장하려면 `xenocast config set api-key --key-env XENOCI_API_KEY`. 키는 명령 인자로 받지 않습니다
@@ -81,7 +85,7 @@ tool_timeout_sec = 600
 
 ## 2. 연결 확인
 
-공개 MCP 도구는 11개입니다: `build`, `status`, `cancel`, `logs`, `list_runners`, `whoami`, `credits`, `usage`, `failure`, `compare`, `search_log`. 키가 없어도 도구 목록은 같습니다. 목록에 없는 이름은 JSON-RPC `-32602`입니다
+공개 MCP 도구는 11개입니다: `build`, `status`, `cancel`, `logs`, `list_runners`, `whoami`, `credits`, `usage`, `failure`, `compare`, `search_log`. xenocast 1.7.0 이상 기준이고, 그보다 옛 버전은 `failure`, `compare`, `search_log`가 없는 8개라 설치 줄을 다시 실행해 업데이트합니다([업데이트 방법](https://xenoci.com/docs/resources/clients#설치와-로그인)), 지금 버전은 `xenocast --version`. 키가 없어도 도구 목록은 같습니다. 목록에 없는 이름은 JSON-RPC `-32602`입니다
 
 에이전트에게 "xenoci whoami 도구를 불러 줘"라고 합니다. 키의 조직과 워크스페이스가 보이면 됩니다. 오류가 나면 `error.code`를 봅니다
 

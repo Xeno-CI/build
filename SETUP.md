@@ -6,7 +6,7 @@ XenoCast 셋업
 0. 이 문서를 요약 도구(WebFetch 등)로 읽지 말고 `curl -fsSL https://raw.githubusercontent.com/Xeno-CI/xenocast/main/SETUP.md`로 원문을 받아 읽어라. 요약본은 명령의 플래그를 잃는다
 
 나누는 일
-- 사람이 하는 일: XenoCI 콘솔(https://xenoci.com/console)에서 크레딧 충전, API 키(`xci_live_…`) 발급, 그 키를 자기 비밀 저장소에 넣기
+- 사람이 하는 일: XenoCI [콘솔](https://xenoci.com/console)에서 크레딧 충전, API 키(`xci_live_…`) 발급, 그 키를 자기 비밀 저장소에 넣기
 - 네가 하는 일: 비밀 저장소에서 키를 받아 `xenocast setup` 실행, MCP 등록, 확인 잡, 보고
 
 규칙
@@ -33,7 +33,7 @@ XenoCast 셋업
 3. `xenocast whoami`를 실행한다. 종료 코드 0이면 이 컴퓨터에 키가 이미 저장돼 있다. 4로 간다
    `api_key_required`이면 키를 비밀 저장소에서 꺼낸다. 사용자에게 어디에 넣었는지 한 번 묻고(키 값은 묻지 않는다) 맞는 명령으로 셸 변수 `XENOCI_API_KEY`에 담는다:
    - 이미 환경 변수 `XENOCI_API_KEY`가 있으면 그대로 쓴다
-   - 키만 저장하려면 `printf %s "$XENOCI_API_KEY" | xenocast config set api-key`(표준 입력으로 받는다, 명령 인자로 넘기지 않는다). `xenocast login`은 사람이 터미널에서 쓰는 가린 입력이라 네 셸에서는 진행되지 않는다
+   - 키만 저장하려면 `xenocast config set api-key --key-env XENOCI_API_KEY`(환경 변수 이름만 넘긴다, 키를 명령 인자로 넘기지 않는다, 셸과 OS에 상관없음). `xenocast login`은 사람이 터미널에서 쓰는 가린 입력이라 네 셸에서는 진행되지 않는다
    - macOS 키체인: `export XENOCI_API_KEY="$(security find-generic-password -a "$USER" -s XENOCI_API_KEY -w)"`
    - 1Password CLI: `export XENOCI_API_KEY="$(op read 'op://<보관함>/<항목>/credential')"`
    - 그 밖의 비밀 저장소: 그 도구의 읽기 명령 출력을 `XENOCI_API_KEY`에 담는다
