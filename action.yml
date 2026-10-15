@@ -17,12 +17,18 @@ inputs:
   timeout:
     description: 제한 시간(분)
     default: '30'
+  no-output-timeout:
+    description: "출력 없이 이 시간(분, 1~120)이 지나면 잡을 멈춥니다. 비우면 15분. xcodebuild archive 처럼 오래 조용한 단계가 있으면 늘리세요"
+    default: ''
   artifacts:
     description: "모을 결과물 경로(쉼표로 구분, 예: build/*.ipa)"
     default: ''
   api-url:
     description: API 주소
     default: https://xenoci.com
+  force:
+    description: "true 면 24시간 안에 같은 소스, 스크립트, 설정이 성공했어도 새로 빌드합니다(xenocast build --force). GitHub 에서 Re-run 한 실행(run_attempt 2 이상)은 이 값과 상관없이 새로 빌드합니다"
+    default: 'false'
   env:
     description: "빌드 스크립트에 넘길 환경 변수, 한 줄에 NAME=${{ secrets.X }} 하나(여러 줄). 값은 XenoCI 가 저장하거나 돌려주지 않고 로그에서 *** 로 가립니다"
     default: ''
@@ -39,11 +45,14 @@ runs:
         XENO_SCRIPT: ${{ inputs.script }}
         XENO_XCODE: ${{ inputs.xcode }}
         XENO_TIMEOUT: ${{ inputs.timeout }}
+        XENO_NO_OUTPUT_TIMEOUT: ${{ inputs.no-output-timeout }}
         XENO_REPO: ${{ github.repository }}
         # On a pull request github.sha is GitHub's temporary merge commit; build the PR's own head commit.
         XENO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         XENO_ACTION_PATH: ${{ github.action_path }}
         XENO_ENV: ${{ inputs.env }}
+        XENO_FORCE: ${{ inputs.force }}
+        XENO_RUN_ATTEMPT: ${{ github.run_attempt }}
       run: |
         # One credential: the console API key (xci_live_…). The CLI sends it as Authorization: Bearer to /api/runner/v1;
         # there is no token exchange. The key is masked before anything else can print it.
@@ -56,6 +65,9 @@ runs:
         if [ "$XENO_SOURCE" = upload ]; then args+=(--dir "${GITHUB_WORKSPACE:-.}"); else args+=(--ref "$XENO_REF"); fi
         if [ -n "$XENO_XCODE" ]; then args+=(--xcode "$XENO_XCODE"); fi
         if [ -n "$XENO_ARTIFACTS" ]; then args+=(--artifacts "$XENO_ARTIFACTS"); fi
+        if [ -n "$XENO_NO_OUTPUT_TIMEOUT" ]; then args+=(--no-output-timeout "$XENO_NO_OUTPUT_TIMEOUT"); fi
+        # Same build reuse (qa-fix-front 0815): force, or a GitHub Re-run (attempt 2+), asks for a new build.
+        case "$XENO_FORCE" in true|TRUE|True|1|yes) args+=(--force) ;; ''|false|FALSE|False|0|no) if [ "${XENO_RUN_ATTEMPT:-1}" -gt 1 ] 2>/dev/null; then args+=(--force); fi ;; *) echo "::error title=XenoCI force 값 오류::force 는 true 또는 false 입니다 (받은 값: $XENO_FORCE)"; exit 1 ;; esac
         # env: one NAME=VALUE per line. Each value is masked in this step's log first; the variable reaches the CLI through
         # its environment (--env NAME), never on the command line.
         if [ -n "$XENO_ENV" ]; then
