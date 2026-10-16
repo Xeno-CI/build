@@ -46,7 +46,7 @@ XenoCast 셋업
    종료 코드 0이면 `unset XENOCI_API_KEY` 후 다음으로. 실패하면 출력의 실패 줄을 사용자에게 보여 준다. `api_key_required`나 `invalid_api_key`이면 3으로 간다
 
 확인 잡
-5. `xenocast build --script 'sw_vers && xcodebuild -version'`을 빈 임시 폴더에서 실행한다. 종료 코드 0이면 잡 ID(`job_...`), macOS, Xcode 버전, 금액을 적어 두고 다음으로. 종료 코드 3(`insufficient_credit` 등)이면 출력의 충전 링크를 사용자에게 보여 주고(충전은 사용자가 콘솔에서), 충전했다고 하면 5를 다시 한다. 그 밖의 실패는 `xenocast logs <job_id> --failure` 결과를 사용자에게 보여 주고 멈춘다
+5. `xenocast build --script 'sw_vers && xcodebuild -version'`을 빈 임시 폴더에서 실행한다. 종료 코드 0이면 잡 ID(`job_...`), macOS, Xcode 버전, 금액을 적어 두고 다음으로. 종료 코드 3(`insufficient_credit` 등)이면 출력의 충전 링크를 사용자에게 보여 주고(충전은 사용자가 콘솔에서), 충전했다고 하면 5를 다시 한다. 그 밖의 실패는 `xenocast status <job_id>`의 실패 원인, 고칠 곳, 문서 줄을 먼저, 더 필요하면 `xenocast failure <job_id>`, 그래도 모자라면 `xenocast logs <job_id> --failure` 결과를 사용자에게 보여 주고 멈춘다
 
 빌드 대상
 6. 사용자에게 한 번 묻는다: "무엇을 빌드할까요? 1) 지금 폴더 2) 공개 GitHub 저장소(owner/name, 브랜치) 3) 나중에". 답에 맞는 명령을 정한다:
