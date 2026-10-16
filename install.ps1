@@ -33,8 +33,10 @@ try {
   $want = ($line -split '\s+')[0].ToLower()
   $got = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $asset)).Hash.ToLower()
   if ($got -ne $want) { throw "checksum mismatch for $asset (expected $want, got $got)" }
-  $head = Get-Content -Raw -TotalCount 1 (Join-Path $tmp $asset) -ErrorAction SilentlyContinue
-  if (-not $head) { $head = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes((Join-Path $tmp $asset))[0..([Math]::Min(65535, ((Get-Item (Join-Path $tmp $asset)).Length - 1)))]) }
+  # The first 64 KiB, read as bytes: Get-Content -Raw with -TotalCount is a parameter error in PowerShell 7 (qa 0905).
+  $stream = [IO.File]::OpenRead((Join-Path $tmp $asset))
+  try { $buf = New-Object byte[] 65536; $n = $stream.Read($buf, 0, $buf.Length) } finally { $stream.Dispose() }
+  $head = [Text.Encoding]::UTF8.GetString($buf, 0, $n)
   $mods = [regex]::Matches($head, "from '\./([A-Za-z0-9_.-]+)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
   foreach ($mod in $mods) {
     Invoke-WebRequest -UseBasicParsing -Uri "$base/$mod" -OutFile (Join-Path $tmp $mod)
