@@ -1,8 +1,8 @@
 name: XenoCI 빌드
-description: XenoCI macOS VM에서 빌드를 실행합니다 (콘솔에서 발급한 API 키 하나, GitHub App 설치 불필요)
+description: 이전 방식, 이미 쓰던 API 키로 XenoCI macOS VM에서 빌드를 실행합니다 (새 연결은 runs-on xenoci-macos, https://xenoci.com/docs/quickstart)
 inputs:
   api-key:
-    description: "XenoCI API 키(xci_live_…, 저장소 시크릿 XENOCI_API_KEY). 콘솔에서 발급합니다. 잡은 조직 잔액(USD)에서 과금합니다"
+    description: "이미 쓰던 XenoCI API 키(xci_live_…, 저장소 시크릿 XENOCI_API_KEY), 잡은 조직 크레딧에서 차감합니다"
     required: true
   script:
     description: 빌드 스크립트 파일 경로 (저장소 기준)
@@ -27,7 +27,7 @@ inputs:
     description: API 주소
     default: https://xenoci.com
   force:
-    description: "true 면 24시간 안에 같은 소스, 스크립트, 설정이 성공했어도 새로 빌드합니다(xenocast build --force). GitHub 에서 Re-run 한 실행(run_attempt 2 이상)은 이 값과 상관없이 새로 빌드합니다"
+    description: "true 면 24시간 안에 같은 소스, 스크립트, 설정이 성공했어도 새로 빌드합니다. GitHub 에서 Re-run 한 실행(run_attempt 2 이상)은 이 값과 상관없이 새로 빌드합니다"
     default: 'false'
   env:
     description: "빌드 스크립트에 넘길 환경 변수, 한 줄에 NAME=${{ secrets.X }} 하나(여러 줄). 값은 XenoCI 가 저장하거나 돌려주지 않고 로그에서 *** 로 가립니다"
@@ -57,8 +57,8 @@ runs:
         # One credential: the console API key (xci_live_…). The CLI sends it as Authorization: Bearer to /api/runner/v1;
         # there is no token exchange. The key is masked before anything else can print it.
         if [ -n "$XENOCI_API_KEY" ]; then echo "::add-mask::$XENOCI_API_KEY"; fi
-        if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다. 콘솔 https://xenoci.com/console 에서 API 키를 발급해 저장소 시크릿 XENOCI_API_KEY 에 넣고 with: api-key 에 secrets.XENOCI_API_KEY 를 넘기세요"; exit 1; fi
-        if [[ "$XENOCI_API_KEY" != xci_live_* ]]; then echo "::error title=XenoCI API 키 형식 오류::api-key 는 콘솔에서 발급한 xci_live_ 로 시작하는 키입니다. 옛 형식 키는 쓸 수 없습니다. 콘솔 https://xenoci.com/console 에서 새 키를 발급해 시크릿 XENOCI_API_KEY 를 바꾸세요"; exit 1; fi
+        if [ -z "$XENOCI_API_KEY" ]; then echo "::error title=XenoCI API 키 없음::api-key 입력이 비어 있습니다, 새로 연결할 때는 이 Action 대신 runs-on xenoci-macos 를 씁니다 https://xenoci.com/docs/quickstart"; exit 1; fi
+        if [[ "$XENOCI_API_KEY" != xci_live_* ]]; then echo "::error title=XenoCI API 키 형식 오류::api-key 는 xci_live_ 로 시작하는 키입니다, 옛 형식 키는 쓸 수 없습니다, 새로 연결할 때는 이 Action 대신 runs-on xenoci-macos 를 씁니다 https://xenoci.com/docs/quickstart"; exit 1; fi
         if [ -z "$XENO_SOURCE" ]; then XENO_SOURCE=upload; fi
         if [ "$XENO_SOURCE" != git ] && [ "$XENO_SOURCE" != upload ]; then echo "::error title=XenoCI source 값 오류::source는 git 또는 upload입니다 (받은 값: $XENO_SOURCE)"; exit 1; fi
         args=(build --script "$XENO_SCRIPT" --timeout "$XENO_TIMEOUT" --repo "$XENO_REPO")
