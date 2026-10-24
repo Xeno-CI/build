@@ -1,0 +1,14 @@
+name: XenoCI Sticky Disk
+description: 잡 사이에 남는 디스크를 XenoCI 맥 잡에 붙이고, 잡이 성공하면 다음 잡을 위해 저장합니다
+inputs:
+  key:
+    description: 저장소 안에서 디스크를 구분하는 이름
+    required: true
+  path:
+    description: 디스크를 붙일 경로(작업 폴더 기준 상대 경로나 절대 경로, ~/ 사용 가능)
+    required: true
+runs:
+  using: node24
+  main: index.mjs
+  post: index.mjs
+  post-if: always()

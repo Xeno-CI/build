@@ -13,6 +13,10 @@ jobs:
 
 이 Action(`Xeno-CI/build@v1`)은 GitHub 러너(`ubuntu-latest` 등)에서 이미 쓰던 API 키로 잡을 XenoCI VM에 보내던 이전 방식입니다, 새로 연결할 때는 위 `runs-on` 방식을 씁니다, 이미 이 Action을 쓰는 워크플로를 위해 입력과 동작을 아래에 남깁니다
 
+## 스티키 디스크
+
+`runs-on: xenoci-macos` 잡에서 폴더를 다음 잡까지 남기려면 `uses: Xeno-CI/build/stickydisk@v1.7.13` 을 씁니다, 입력과 예시는 [stickydisk/README.md](stickydisk/README.md)에 있습니다
+
 ## 워크플로 (이전 방식)
 
 ```yaml
