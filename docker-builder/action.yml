@@ -1,0 +1,26 @@
+# XenoCI Docker builder: a BuildKit builder whose whole state (layers and RUN --mount=type=cache directories) is kept
+# between jobs on a disk of the organization, keyed by cache-key. Replaces docker/setup-buildx-action; build with the
+# standard docker/build-push-action, docker buildx build, docker build or docker compose (BUILDX_BUILDER is set).
+# post-if success(): a failed or cancelled job never saves; its disk clone is discarded and the lease ends with the job.
+name: XenoCI Docker builder
+description: BuildKit builder with a persistent layer cache on XenoCI Linux runners
+inputs:
+  cache-key:
+    description: Which layer cache this build uses, normally the Dockerfile path
+    required: true
+  buildkit-image:
+    description: Digest-pinned BuildKit image (default moby/buildkit v0.25)
+    default: moby/buildkit@sha256:98cc6a3fc46220d00f8224ae483f3274fc874e9be8d7dd1e2e2c5481209228b5
+  helper-image:
+    description: Digest-pinned image with GNU tar, used only when the disk is not attached as a block device
+    default: debian@sha256:ec31d744f83f4a73447ba045aaab9409997efe5cc706eca4890c1be36cc1606a
+outputs:
+  name:
+    description: Builder name (same as docker/setup-buildx-action's output)
+  builder:
+    description: Builder name
+runs:
+  using: node24
+  main: main.mjs
+  post: post.mjs
+  post-if: success()

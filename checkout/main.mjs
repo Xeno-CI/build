@@ -1,6 +1,6 @@
 // actions/checkout/main.mjs
-import fs4 from "node:fs/promises";
-import path4 from "node:path";
+import fs7 from "node:fs/promises";
+import path6 from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -191,6 +191,9 @@ import path3 from "node:path";
 import crypto2 from "node:crypto";
 import { once } from "node:events";
 import { pipeline } from "node:stream/promises";
+import http from "node:http";
+import https from "node:https";
+import { Readable } from "node:stream";
 
 // server/ci/runner2-cache-mac.js
 import fs2 from "node:fs/promises";
@@ -309,6 +312,18 @@ function createMacCacheAdapter({ root, run = execute, platform = process.platfor
 }
 
 // server/ci/runner2-cache-runtime.js
+function httpGetResponse(url, { headers = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = (new URL(url).protocol === "https:" ? https : http).get(url, { headers }, (res) => {
+      const out = new Headers;
+      for (const [k, v] of Object.entries(res.headers))
+        if (v != null)
+          out.set(k, Array.isArray(v) ? v.join(", ") : String(v));
+      resolve(new Response([204, 304].includes(res.statusCode) ? (res.resume(), null) : Readable.toWeb(res), { status: res.statusCode, headers: out }));
+    });
+    req.once("error", reject);
+  });
+}
 var fileName = /^(?:Info\.plist|Info\.bckup|token|bands\/[a-f0-9]+)$/;
 var digestFile = async (name) => {
   const digest = crypto2.createHash("sha256");
@@ -439,6 +454,7 @@ function createMacStickyJobRuntime({
   root,
   gateway = null,
   fetchImpl = fetch,
+  downloadImpl = fetchImpl === fetch ? httpGetResponse : fetchImpl,
   guestLocal = false,
   adapter = createMacCacheAdapter({ root, guestLocal }),
   log = () => {}
@@ -450,12 +466,14 @@ function createMacStickyJobRuntime({
   if (gateway && transport.href !== "http://artifacts.ci.xeno/")
     throw new Error("invalid internal cache gateway");
   const requestUrl = (url) => new URL(url.pathname + url.search, transport);
+  const viaHeaders = (url, headers = {}) => gateway && url.origin === transport.origin ? { ...headers, "x-xeno-cache-origin": base.origin } : headers;
   const endpoint = `/api/runner/v1/organizations/${encodeURIComponent(orgPublicId)}/cache/leases`;
   const api = async (route, body) => {
-    const response = await fetchImpl(requestUrl(new URL(route, base)), {
+    const url = requestUrl(new URL(route, base));
+    const response = await fetchImpl(url, {
       method: "POST",
       redirect: "error",
-      headers: { Authorization: `Bearer ${capability}`, "Content-Type": "application/json" },
+      headers: viaHeaders(url, { Authorization: `Bearer ${capability}`, "Content-Type": "application/json" }),
       body: JSON.stringify(body)
     });
     if (!response.ok) {
@@ -474,14 +492,16 @@ function createMacStickyJobRuntime({
       throw new Error("foreign cache blob origin");
     return requestUrl(url);
   };
-  const begin = async ({ key, maxBytes, mode = "write", kind = "sticky" }) => {
+  const begin = async ({ key, maxBytes, mode = "write", kind = "sticky", mountPath = null }) => {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 32 * 1024 ** 2)
       throw new Error("invalid cache image capacity");
-    const request = (m) => api(endpoint, { kind, repo, key, ref, mode: m, job_id: jobPublicId });
+    const request = (m) => api(endpoint, { kind, repo, key, ref, mode: m, job_id: jobPublicId, ...typeof mountPath === "string" && mountPath ? { path: mountPath } : {} });
+    let readOnly = null;
     const lease = await request(mode).catch((error) => {
-      if (mode !== "write" || error.status !== 402)
+      if (mode !== "write" || error.status !== 402 || error.message === "sticky_unpaid")
         throw error;
       mode = "read";
+      readOnly = error.message;
       return request("read");
     });
     const localId = `disk_${crypto2.createHash("sha256").update(`${orgPublicId}\x00${repo}\x00${kind === "sticky" ? "" : `${kind}\x00`}${key}`).digest("hex")}`;
@@ -492,7 +512,8 @@ function createMacStickyJobRuntime({
       if (lease.generation > 0 && lease.read_url) {
         const started = Date.now();
         try {
-          const response = await fetchImpl(signedUrl(lease.read_url), { redirect: "error" });
+          const readUrl = signedUrl(lease.read_url);
+          const response = await downloadImpl(readUrl, { redirect: "error", headers: viaHeaders(readUrl) });
           if (!response.ok || Number(response.headers.get("content-length")) > maxBytes * 2) {
             await response.body?.cancel();
             throw new Error(`cache image download ${response.status}`);
@@ -515,7 +536,7 @@ function createMacStickyJobRuntime({
       if (!restored)
         await adapter.create({ diskId: localId, maxBytes, generation: lease.generation });
       const mounted = await adapter.attach({ diskId: localId, generation: lease.generation, leaseId: lease.lease_id, mode });
-      return { lease, mounted, maxBytes, localId, restored, source, downloadMs, downloadBytes };
+      return { lease, mounted, maxBytes, localId, restored, source, downloadMs, downloadBytes, readOnly };
     } catch (error) {
       await api(`${endpoint}/${encodeURIComponent(lease.lease_id)}/release`, {});
       await adapter.remove({ diskId: localId, activeLeases: 0 });
@@ -536,12 +557,13 @@ function createMacStickyJobRuntime({
       const receipt = await packMacCacheImage(published.path, archive);
       if (receipt.bytes > job.maxBytes)
         throw new Error("cache image exceeds reserved capacity");
-      const response = await fetchImpl(signedUrl(job.lease.write_url), {
+      const writeUrl = signedUrl(job.lease.write_url);
+      const response = await fetchImpl(writeUrl, {
         method: "PUT",
         redirect: "error",
         body: createReadStream(archive),
         duplex: "half",
-        headers: { "content-length": String(receipt.bytes) }
+        headers: viaHeaders(writeUrl, { "content-length": String(receipt.bytes) })
       });
       if (!response.ok)
         throw new Error(`cache image upload failed ${response.status}`);
@@ -555,24 +577,389 @@ function createMacStickyJobRuntime({
   return { begin, finish, release, cleanup };
 }
 
+// integrations/stickydisk/job-grant.mjs
+import fs4 from "node:fs/promises";
+import path4 from "node:path";
+import os2 from "node:os";
+var FILE = ".xenoci-job-grant.json";
+async function ensureJobGrant(env = process.env, { home = os2.homedir(), fetchImpl = fetch } = {}) {
+  if (env.XENOCI_STICKY_CONFIG && env.XENOCI_CACHE_JOB_CAPABILITY)
+    return true;
+  const file = path4.join(home, FILE);
+  try {
+    const saved = JSON.parse(await fs4.readFile(file, "utf8"));
+    if (saved?.capability && saved?.config)
+      return apply(env, saved);
+  } catch {}
+  if (!env.ACTIONS_RUNTIME_TOKEN)
+    return false;
+  const base = (await fs4.readFile(path4.join(home, ".xenoci-results-url"), "utf8").catch(() => "")).trim();
+  if (!/^https:\/\/[^/]+\/$/.test(base))
+    return false;
+  try {
+    const response = await fetchImpl(new URL("/api/runner/v1/cache/job-grant", base), {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(20000),
+      headers: { authorization: `Bearer ${env.ACTIONS_RUNTIME_TOKEN}`, "content-type": "application/json" },
+      body: "{}"
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return false;
+    }
+    const { data } = await response.json();
+    if (typeof data?.capability !== "string" || data.config?.origin !== base.replace(/\/$/, ""))
+      return false;
+    await fs4.writeFile(file, JSON.stringify(data), { mode: 384, flag: "wx" }).catch(() => {});
+    return apply(env, data);
+  } catch {
+    return false;
+  }
+}
+function apply(env, { capability, config }) {
+  env.XENOCI_CACHE_JOB_CAPABILITY = capability;
+  env.XENOCI_STICKY_CONFIG = JSON.stringify(config);
+  console.log(`::add-mask::${capability}`);
+  return true;
+}
+
+// integrations/stickydisk/linux-block.mjs
+import fs6 from "node:fs/promises";
+import { watch } from "node:fs";
+import path5 from "node:path";
+import os3 from "node:os";
+import net from "node:net";
+import { execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+
+// integrations/docker-builder/cache.mjs
+import fs5 from "node:fs";
+import fsp from "node:fs/promises";
+import crypto3 from "node:crypto";
+import { Transform } from "node:stream";
+import { pipeline as pipeline2 } from "node:stream/promises";
+var MAX_ARCHIVE_BYTES = 1024 ** 3;
+async function archiveDigest(file, maxBytes = MAX_ARCHIVE_BYTES) {
+  const hash = crypto3.createHash("sha256");
+  let bytes = 0;
+  for await (const chunk of fs5.createReadStream(file)) {
+    bytes += chunk.length;
+    if (bytes > maxBytes)
+      throw Error("cache archive exceeds capacity");
+    hash.update(chunk);
+  }
+  return { bytes, digest: hash.digest("hex") };
+}
+function createBuilderCache(config, { fetchImpl = fetch, now = Date.now } = {}) {
+  const base = new URL(config.origin);
+  if (base.protocol !== "https:" || base.username || base.password || base.pathname !== "/" || base.search || base.hash)
+    throw Error("invalid cache origin");
+  if (!config.capability || !config.orgPublicId || !config.jobPublicId || !config.repo || !config.ref)
+    throw Error("missing job cache grant");
+  if (!["read", "write"].includes(config.mode))
+    throw Error("invalid cache mode");
+  const transport = config.gateway ? new URL(config.gateway) : base;
+  if (config.gateway && transport.href !== "http://artifacts.ci.xeno/")
+    throw Error("invalid cache gateway");
+  const endpoint = `/api/runner/v1/organizations/${encodeURIComponent(config.orgPublicId)}/cache/leases`;
+  const headers = (url, extra = {}) => config.gateway && url.origin === transport.origin ? { ...extra, "x-xeno-cache-origin": base.origin } : extra;
+  const api = async (suffix, body) => {
+    const url = new URL(endpoint + suffix, transport);
+    const response = await fetchImpl(url, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(60000),
+      headers: headers(url, { authorization: `Bearer ${config.capability}`, "content-type": "application/json" }),
+      body: JSON.stringify(body)
+    });
+    const value = await response.json();
+    if (!response.ok)
+      throw Object.assign(Error(value.error?.code || "cache_http_error"), { status: response.status });
+    return value.data;
+  };
+  const blobUrl = (value) => {
+    const url = new URL(value, base);
+    if (url.username || url.password || url.hash)
+      throw Error("foreign cache blob origin");
+    if (url.origin === "http://sticky.ci.xeno" && /^\/objects\/[A-Za-z0-9_-]{8,100}$/.test(url.pathname))
+      return url;
+    if (url.origin !== base.origin || url.pathname !== "/api/runner/v1/cache/blobs")
+      throw Error("foreign cache blob origin");
+    return new URL(url.pathname + url.search, transport);
+  };
+  const acquire = async (key, options = {}) => {
+    const request = (mode2) => api("", { kind: "sticky", repo: config.repo, key, ref: config.ref, mode: mode2, job_id: config.jobPublicId, ...options });
+    let mode = config.mode, lease;
+    try {
+      lease = await request(mode);
+    } catch (error) {
+      if (mode !== "write" || !["writer_busy", "untrusted_ref", "insufficient_credit"].includes(error.message))
+        throw error;
+      mode = "read";
+      lease = await request(mode);
+    }
+    if (!/^lease_[A-Za-z0-9_-]{8,80}$/.test(lease.lease_id) || !Number.isSafeInteger(lease.generation) || lease.generation < 0)
+      throw Error("invalid cache lease");
+    return { ...lease, mode: lease.mode ?? mode };
+  };
+  const restore = async (lease, file) => {
+    if (!lease.generation || !lease.read_url)
+      return false;
+    const url = blobUrl(lease.read_url);
+    const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(120000), headers: headers(url) });
+    if (!response.ok || Number(response.headers.get("content-length")) > MAX_ARCHIVE_BYTES) {
+      await response.body?.cancel();
+      throw Error("cache download rejected");
+    }
+    let bytes = 0;
+    try {
+      await pipeline2(response.body, new Transform({ transform(chunk, _encoding, done) {
+        bytes += chunk.length;
+        done(bytes > MAX_ARCHIVE_BYTES ? Error("cache archive exceeds capacity") : null, chunk);
+      } }), fs5.createWriteStream(file, { flags: "wx", mode: 384 }));
+      const receipt = await archiveDigest(file);
+      if (!lease.digest || receipt.digest !== lease.digest || response.headers.get("etag") !== `"${receipt.digest}"`)
+        throw Error("cache digest mismatch");
+      return true;
+    } catch (error) {
+      await fsp.rm(file, { force: true });
+      throw error;
+    }
+  };
+  const commit = async (lease, file) => {
+    if (lease.mode !== "write" || !lease.write_url)
+      return { committed: false };
+    if (!(Date.parse(lease.expires_at) > now()))
+      throw Error("cache lease expired");
+    const receipt = await archiveDigest(file), url = blobUrl(lease.write_url);
+    const body = fs5.createReadStream(file);
+    try {
+      const response = await fetchImpl(url, {
+        method: "PUT",
+        redirect: "error",
+        signal: AbortSignal.timeout(120000),
+        headers: headers(url, { "content-length": String(receipt.bytes) }),
+        body,
+        duplex: "half"
+      });
+      await response.body?.cancel();
+      if (!response.ok)
+        throw Error("cache upload rejected");
+    } finally {
+      body.destroy();
+    }
+    return api(`/${encodeURIComponent(lease.lease_id)}/commit`, { generation: lease.generation, ...receipt });
+  };
+  const commitBlock = (lease, receipt) => {
+    if (lease.mode !== "write" || receipt.committed !== true)
+      return { committed: false };
+    return api(`/${encodeURIComponent(lease.lease_id)}/commit`, { generation: lease.generation, bytes: receipt.bytes, digest: receipt.sha256 });
+  };
+  return { acquire, restore, commit, commitBlock, release: (lease) => api(`/${encodeURIComponent(lease.lease_id)}/release`, {}) };
+}
+
+// integrations/stickydisk/linux-block.mjs
+var exec = promisify2(execFile2);
+var deviceCommand = async (command, args) => (await exec(command, args, { timeout: 120000 })).stdout.trim();
+function blockHostcall(message, { host = "10.0.2.102", port = 80 } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    let data = "";
+    const finish = (error, value) => {
+      socket.destroy();
+      if (error)
+        reject(error);
+      else
+        resolve(value);
+    };
+    socket.setTimeout(60000, () => finish(Error("block_hostcall_timeout")));
+    socket.once("error", reject);
+    socket.once("connect", () => socket.write(`${JSON.stringify(message)}
+`));
+    socket.on("data", (chunk) => {
+      data += chunk;
+      if (data.length > 65536)
+        return finish(Error("block_hostcall_response_too_large"));
+      if (!data.includes(`
+`))
+        return;
+      try {
+        const value = JSON.parse(data.slice(0, data.indexOf(`
+`)));
+        if (value.ok !== true)
+          throw Error("block_hostcall_failed");
+        finish(null, value);
+      } catch (error) {
+        finish(error);
+      }
+    });
+    socket.once("end", () => finish(Error("block_hostcall_closed")));
+  });
+}
+function waitForBlockDevice(device, { watchImpl = watch, access = fs6.access } = {}) {
+  return new Promise((resolve, reject) => {
+    const watcher = watchImpl(path5.dirname(device), check);
+    const timer = setTimeout(() => finish(Error("block_device_timeout")), 1e4);
+    function finish(error) {
+      clearTimeout(timer);
+      watcher.close();
+      if (error)
+        reject(error);
+      else
+        resolve();
+    }
+    function check() {
+      access(device).then(() => finish(), (error) => {
+        if (error.code !== "ENOENT")
+          finish(error);
+      });
+    }
+    watcher.once("error", finish);
+    check();
+  });
+}
+function createLinuxBlockDisk({
+  runnerTemp = process.env.RUNNER_TEMP,
+  run = deviceCommand,
+  host,
+  port,
+  waitDevice = waitForBlockDevice,
+  log = console.log
+} = {}) {
+  const call = (message) => blockHostcall(message, { host, port });
+  const attach = async (lease, mountPath) => {
+    const started = Date.now();
+    let slot, slotFile;
+    for (let n = 1;n <= 5; n++) {
+      const file = path5.join(runnerTemp, `xenoci-block-slot-${n}.json`);
+      try {
+        const handle = await fs6.open(file, "wx", 384);
+        try {
+          await handle.writeFile(JSON.stringify({ lease: lease.lease_id }));
+        } finally {
+          await handle.close();
+        }
+        slot = n;
+        slotFile = file;
+        break;
+      } catch (error) {
+        if (error.code !== "EEXIST")
+          throw error;
+      }
+    }
+    if (!slot)
+      throw Error("block_slots_full");
+    const disk = { slot, slotFile, mount: mountPath || path5.join(runnerTemp, `xenoci-buildkit-${slot}`), mounted: false, detached: false };
+    try {
+      const attached = await call({ op: "attach", attach: lease.block.attach, slot });
+      if (attached.serial !== `xsticky${slot}`)
+        throw Error("block_serial_invalid");
+      const device = `/dev/disk/by-id/virtio-${attached.serial}`;
+      await waitDevice(device);
+      let type;
+      try {
+        type = await run("sudo", ["blkid", "-o", "value", "-s", "TYPE", device]);
+      } catch (error) {
+        if (error.code !== 2)
+          throw error;
+        type = "";
+      }
+      const uid = await run("id", ["-u"]), gid = await run("id", ["-g"]);
+      if (type.trim() === "ext4")
+        await run("sudo", ["resize2fs", "-f", device]);
+      else
+        await run("sudo", ["mkfs.ext4", "-m0", "-E", `root_owner=${uid}:${gid},nodiscard,lazy_itable_init=1,lazy_journal_init=1`, "-F", device]);
+      await run("sudo", ["mkdir", "-p", disk.mount]);
+      await run("sudo", ["mount", "-t", "ext4", device, disk.mount]);
+      disk.mounted = true;
+      if (type.trim() !== "ext4")
+        await run("sudo", ["rmdir", path5.join(disk.mount, "lost+found")]);
+      await run("sudo", ["chown", `${uid}:${gid}`, disk.mount]);
+      log(`XENOCI_STICKY_MOUNTED generation=${lease.generation} filesystem=ext4 transport=block attach_ms=${Date.now() - started}`);
+      return disk;
+    } catch (error) {
+      await detach(lease, disk, false);
+      throw error;
+    }
+  };
+  const detach = async (lease, disk, commit) => {
+    if (disk.detached)
+      return { committed: false };
+    if (disk.mounted) {
+      await run("sudo", ["sync", "-f", disk.mount]);
+      for (let attempt = 0;; attempt++) {
+        try {
+          await run("sudo", ["umount", disk.mount]);
+          break;
+        } catch (error) {
+          if (attempt === 2)
+            throw error;
+        }
+      }
+      disk.mounted = false;
+    }
+    const result = await call({ op: "detach", detach: lease.block.detach, slot: disk.slot, commit: commit && lease.mode === "write" });
+    disk.detached = true;
+    await fs6.rm(disk.slotFile);
+    if (lease.mode === "read")
+      log("::notice::읽기 전용 스티키 디스크의 변경 사항은 저장되지 않고 폐기됩니다");
+    return result;
+  };
+  return { attach, detach };
+}
+function createLinuxCheckoutRuntime(config, {
+  cacheFor = (mode) => createBuilderCache({ ...config, mode }),
+  disk = createLinuxBlockDisk()
+} = {}) {
+  return {
+    async begin({ key, kind = "checkout", mode = "read" }) {
+      const cache = cacheFor(mode);
+      const lease = await cache.acquire(key, { kind, transport: "block", fs: "ext4" });
+      if (!lease.block) {
+        await cache.release(lease);
+        throw Error("block_unavailable");
+      }
+      let attached;
+      try {
+        attached = await disk.attach(lease, path5.join(process.env.RUNNER_TEMP || os3.tmpdir(), "xenoci-checkout-mirror"));
+      } catch (error) {
+        await cache.release(lease);
+        throw error;
+      }
+      return { lease, disk: attached, mounted: { mode: lease.mode, mount: attached.mount } };
+    },
+    async finish(job, { succeeded }) {
+      const receipt = await disk.detach(job.lease, job.disk, succeeded === true);
+      return receipt.committed ? cacheFor(job.lease.mode).commitBlock(job.lease, receipt) : { committed: false };
+    },
+    release: (job) => cacheFor(job.lease.mode).release(job.lease),
+    async cleanup(job) {
+      if (!job.disk.detached)
+        await disk.detach(job.lease, job.disk, false);
+    }
+  };
+}
+
 // actions/checkout/main.mjs
 var env = process.env;
-var here = path4.dirname(fileURLToPath(import.meta.url));
+var here = path6.dirname(fileURLToPath(import.meta.url));
 if ((env.HTTPS_PROXY || env.https_proxy) && !process.execArgv.includes("--use-env-proxy")) {
   const child = spawn2(process.execPath, ["--use-env-proxy", ...process.execArgv, ...process.argv.slice(1)], { env, stdio: "inherit" });
   child.once("close", (code) => process.exit(code ?? 1));
 } else {
+  await ensureJobGrant(env);
   if (env.XENOCI_CACHE_JOB_CAPABILITY)
     console.log(`::add-mask::${env.XENOCI_CACHE_JOB_CAPABILITY}`);
   process.exitCode = await runMain({
     env,
     log: (line) => console.log(line),
-    upstream: upstreamRunner(path4.join(here, "upstream", "index.cjs")),
-    saveState: (name, value) => fs4.appendFile(env.GITHUB_STATE, `${name}=${value}
+    upstream: upstreamRunner(path6.join(here, "upstream", "index.cjs")),
+    saveState: (name, value) => fs7.appendFile(env.GITHUB_STATE, `${name}=${value}
 `),
     openRuntime: async (config) => {
       const prepared = await runtimeConfig(env, config);
-      return { config: prepared, runtime: createMacStickyJobRuntime({ ...prepared, capability: env.XENOCI_CACHE_JOB_CAPABILITY }) };
+      return { config: prepared, runtime: process.platform === "linux" ? createLinuxCheckoutRuntime({ ...prepared, capability: env.XENOCI_CACHE_JOB_CAPABILITY }) : createMacStickyJobRuntime({ ...prepared, capability: env.XENOCI_CACHE_JOB_CAPABILITY }) };
     }
   }).catch((error) => {
     console.log(`::error::${error.message}`);
