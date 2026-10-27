@@ -1,6 +1,6 @@
 # XenoCI Checkout
 
-`actions/checkout@v4` with a cached Git mirror on XenoCI macOS runners.
+`actions/checkout@v4` with a cached Git mirror on XenoCI macOS and Linux runners.
 
 ```yaml
 - uses: Xeno-CI/build/checkout@<commit sha>

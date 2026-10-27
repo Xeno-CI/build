@@ -528,8 +528,8 @@ function createBuilderCache(config, { fetchImpl = fetch, now = Date.now } = {}) 
       throw Error("foreign cache blob origin");
     return new URL(url.pathname + url.search, transport);
   };
-  const acquire = async (key, options = {}) => {
-    const request = (mode2) => api("", { kind: "sticky", repo: config.repo, key, ref: config.ref, mode: mode2, job_id: config.jobPublicId, ...options });
+  const acquire = async (key, { kind = "sticky", ...options } = {}) => {
+    const request = (mode2) => api("", { kind, repo: config.repo, key, ref: config.ref, mode: mode2, job_id: config.jobPublicId, ...options });
     let mode = config.mode, lease;
     try {
       lease = await request(mode);
@@ -665,13 +665,14 @@ function createLinuxBlockDisk({
   host,
   port,
   waitDevice = waitForBlockDevice,
-  log = console.log
+  log = console.log,
+  slots = [1, 2, 3, 4, 5]
 } = {}) {
   const call = (message) => blockHostcall(message, { host, port });
   const attach = async (lease, mountPath) => {
     const started = Date.now();
     let slot, slotFile;
-    for (let n = 1;n <= 5; n++) {
+    for (const n of slots) {
       const file = path4.join(runnerTemp, `xenoci-block-slot-${n}.json`);
       try {
         const handle = await fs5.open(file, "wx", 384);
