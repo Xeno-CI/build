@@ -1,5 +1,5 @@
 // actions/checkout/post.mjs
-import path5 from "node:path";
+import path6 from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -782,17 +782,65 @@ function createLinuxCheckoutRuntime(config, {
   };
 }
 
+// integrations/stickydisk/job-grant.mjs
+import fs6 from "node:fs/promises";
+import path5 from "node:path";
+import os2 from "node:os";
+var FILE = ".xenoci-job-grant.json";
+async function ensureJobGrant(env = process.env, { home = os2.homedir(), fetchImpl = fetch } = {}) {
+  if (env.XENOCI_STICKY_CONFIG && env.XENOCI_CACHE_JOB_CAPABILITY)
+    return true;
+  const file = path5.join(home, FILE);
+  try {
+    const saved = JSON.parse(await fs6.readFile(file, "utf8"));
+    if (saved?.capability && saved?.config)
+      return apply(env, saved);
+  } catch {}
+  if (!env.ACTIONS_RUNTIME_TOKEN)
+    return false;
+  const base = (await fs6.readFile(path5.join(home, ".xenoci-results-url"), "utf8").catch(() => "")).trim();
+  if (!/^https:\/\/[^/]+\/$/.test(base))
+    return false;
+  try {
+    const response = await fetchImpl(new URL("/api/runner/v1/cache/job-grant", base), {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(20000),
+      headers: { authorization: `Bearer ${env.ACTIONS_RUNTIME_TOKEN}`, "content-type": "application/json" },
+      body: "{}"
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return false;
+    }
+    const { data } = await response.json();
+    if (typeof data?.capability !== "string" || data.config?.origin !== base.replace(/\/$/, ""))
+      return false;
+    await fs6.writeFile(file, JSON.stringify(data), { mode: 384, flag: "wx" }).catch(() => {});
+    return apply(env, data);
+  } catch {
+    return false;
+  }
+}
+function apply(env, { capability, config }) {
+  env.XENOCI_CACHE_JOB_CAPABILITY = capability;
+  env.XENOCI_STICKY_CONFIG = JSON.stringify(config);
+  console.log(`::add-mask::${capability}`);
+  return true;
+}
+
 // actions/checkout/post.mjs
 var env = process.env;
-var here = path5.dirname(fileURLToPath(import.meta.url));
+var here = path6.dirname(fileURLToPath(import.meta.url));
 if ((env.HTTPS_PROXY || env.https_proxy) && !process.execArgv.includes("--use-env-proxy")) {
   const child = spawn2(process.execPath, ["--use-env-proxy", ...process.execArgv, ...process.argv.slice(1)], { env, stdio: "inherit" });
   child.once("close", (code) => process.exit(code ?? 1));
 } else {
+  await ensureJobGrant(env);
   process.exitCode = await runPost({
     env,
     log: (line) => console.log(line),
-    upstream: upstreamRunner(path5.join(here, "upstream", "index.cjs")),
+    upstream: upstreamRunner(path6.join(here, "upstream", "index.cjs")),
     runtimeFor: (config) => (process.platform === "linux" ? createLinuxCheckoutRuntime : createMacStickyJobRuntime)({ ...config, capability: env.XENOCI_CACHE_JOB_CAPABILITY })
   }).catch((error) => {
     console.log(`::warning::${error.message}`);
