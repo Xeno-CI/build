@@ -1029,7 +1029,7 @@ try {
   const config = JSON.parse(env.XENOCI_STICKY_CONFIG ?? "null");
   if (!config || !/^https:\/\/[^/]+$/.test(config.origin ?? "") || !env.XENOCI_CACHE_JOB_CAPABILITY)
     throw new Error("Sticky disks require a XenoCI runner");
-  if (!config.gateway) {
+  if (process.platform === "darwin" && !config.gateway) {
     const verdict = await fs8.readFile(path6.join(os3.homedir(), ".xenoci-results-url"), "utf8").catch(() => "");
     if (/^http:\/\/artifacts\.ci\.xeno(?::\d{2,5})?\/$/.test(verdict.trim()))
       config.gateway = verdict.trim();

@@ -10,7 +10,7 @@ jobs:
     runs-on: xenoci-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
-      - uses: Xeno-CI/build/stickydisk@stickydisk-v1.0.0
+      - uses: Xeno-CI/build/stickydisk@stickydisk-v1.0.1
         with:
           key: npm-cache
           path: ~/.npm
@@ -25,7 +25,7 @@ jobs:
     runs-on: xenoci-standard
     steps:
       - uses: actions/checkout@v4
-      - uses: Xeno-CI/build/stickydisk@stickydisk-v1.0.0
+      - uses: Xeno-CI/build/stickydisk@stickydisk-v1.0.1
         with:
           key: derived-data
           path: ~/Library/Developer/Xcode/DerivedData
@@ -42,3 +42,5 @@ jobs:
 - XenoCI 러너가 발급한 잡 권한으로만 동작합니다. GitHub 호스티드 러너에서는 사용할 수 없습니다.
 
 기존 `v1.7.13` 태그는 그대로 유지됩니다. 이 릴리스는 CLI나 다른 액션을 변경하지 않습니다.
+
+`stickydisk-v1.0.1`은 Linux에서 Actions 캐시의 NAS 주소를 스티키 권한 요청에 잘못 사용하던 문제를 수정합니다. 기존 `stickydisk-v1.0.0` 태그도 이동하지 않습니다.
