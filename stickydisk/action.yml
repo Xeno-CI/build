@@ -1,5 +1,5 @@
 name: XenoCI Sticky Disk
-description: 잡 사이에 남는 디스크를 XenoCI 맥 잡에 붙이고, 잡이 성공하면 다음 잡을 위해 저장합니다
+description: XenoCI Linux와 Mac 잡에 저장소별 디스크를 붙이고 잡이 끝나면 다음 잡을 위해 저장합니다
 inputs:
   key:
     description: 저장소 안에서 디스크를 구분하는 이름
