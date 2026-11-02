@@ -847,12 +847,20 @@ import path5 from "node:path";
 import os2 from "node:os";
 var FILE = ".xenoci-job-grant.json";
 async function ensureJobGrant(env = process.env, { home = os2.homedir(), fetchImpl = fetch } = {}) {
-  if (env.XENOCI_STICKY_CONFIG && env.XENOCI_CACHE_JOB_CAPABILITY)
+  const own = (config) => !env.GITHUB_REPOSITORY || String(config?.repo ?? "").toLowerCase() === env.GITHUB_REPOSITORY.toLowerCase();
+  const envConfig = (() => {
+    try {
+      return JSON.parse(env.XENOCI_STICKY_CONFIG ?? "null");
+    } catch {
+      return null;
+    }
+  })();
+  if (env.XENOCI_STICKY_CONFIG && env.XENOCI_CACHE_JOB_CAPABILITY && own(envConfig))
     return true;
   const file = path5.join(home, FILE);
   try {
     const saved = JSON.parse(await fs6.readFile(file, "utf8"));
-    if (saved?.capability && saved?.config)
+    if (saved?.capability && saved?.config && own(saved.config))
       return apply(env, saved);
   } catch {}
   if (!env.ACTIONS_RUNTIME_TOKEN)
@@ -875,7 +883,7 @@ async function ensureJobGrant(env = process.env, { home = os2.homedir(), fetchIm
     const { data } = await response.json();
     if (typeof data?.capability !== "string" || data.config?.origin !== base.replace(/\/$/, ""))
       return false;
-    await fs6.writeFile(file, JSON.stringify(data), { mode: 384, flag: "wx" }).catch(() => {});
+    await fs6.writeFile(file, JSON.stringify(data), { mode: 384 }).catch(() => {});
     return apply(env, data);
   } catch {
     return false;
