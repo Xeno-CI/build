@@ -10,6 +10,8 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 var MIRROR_KEY = "git-mirror";
+var DEFAULT_HEAD = "refs/xenoci/default";
+var LEGACY_HEAD = "refs/heads/mirror";
 var ROOM_CODES = new Set(["sticky_capacity_full", "sticky_org_full"]);
 var UNSUPPORTED = ["ssh-key", "filter"];
 var input = (env, name) => String(env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] ?? "").trim();
@@ -86,7 +88,7 @@ async function runMain({ env, upstream, openRuntime, saveState, log, now = Date.
     ({ runtime, config: prepared } = await openRuntime(config));
     const begin = (m) => runtime.begin({ key: MIRROR_KEY, kind: "checkout", maxBytes: config.maxBytes, mode: m });
     job = await begin(mode).catch((error) => {
-      if (mode !== "write" || error.status !== 403 && error.status !== 402)
+      if (mode !== "write" || error.status !== 403 && error.status !== 402 && error.message !== "writer_busy")
         throw error;
       mode = "read";
       return begin("read").then((j) => ({ ...j, readOnly: error.status === 402 ? "insufficient_credit" : j.readOnly }));
@@ -113,8 +115,8 @@ async function runMain({ env, upstream, openRuntime, saveState, log, now = Date.
       const fetchStarted = now();
       if (await fs.stat(path.join(mirror, "objects")).catch(() => null) === null && (await git(["init", "-q", "--bare", mirror])).code !== 0)
         throw new Error("mirror_init_failed");
-      const mirrorHead = async () => (await git(["--git-dir", mirror, "rev-parse", "--verify", "--quiet", "refs/heads/mirror^{commit}"])).stdout;
-      const before = await mirrorHead();
+      const refs = async () => (await git(["--git-dir", mirror, "for-each-ref", "--format=%(objectname) %(refname)"])).stdout;
+      const before = await refs();
       const fetched = await git([
         "--git-dir",
         mirror,
@@ -126,15 +128,19 @@ async function runMain({ env, upstream, openRuntime, saveState, log, now = Date.
         "--prune",
         "--",
         originUrl(repository),
-        `+${config.ref}:refs/heads/mirror`
+        "+refs/heads/*:refs/heads/*",
+        "+refs/tags/*:refs/tags/*",
+        `+HEAD:${DEFAULT_HEAD}`
       ], { token });
       fetchMs = now() - fetchStarted;
       if (fetched.code !== 0)
         throw new Error("mirror_fetch_failed");
-      if (!before || await mirrorHead() !== before)
+      if (!before || await refs() !== before)
         await saveState("XENOCI_CHECKOUT_COMMIT", "1");
     }
-    const head = await git(["--git-dir", mirror, "rev-parse", "--verify", "--quiet", "refs/heads/mirror^{commit}"]);
+    let head = await git(["--git-dir", mirror, "rev-parse", "--verify", "--quiet", `${DEFAULT_HEAD}^{commit}`]);
+    if (head.code !== 0)
+      head = await git(["--git-dir", mirror, "rev-parse", "--verify", "--quiet", `${LEGACY_HEAD}^{commit}`]);
     if (head.code !== 0 || !/^[0-9a-f]{40}$/.test(head.stdout))
       throw new Error("mirror_empty");
     const [owner, name] = repository.split("/");
@@ -144,6 +150,12 @@ async function runMain({ env, upstream, openRuntime, saveState, log, now = Date.
         throw new Error("prepare_failed");
     await fs.writeFile(path.join(target, ".git", "objects", "info", "alternates"), `${path.join(mirror, "objects")}
 `);
+    const near = [DEFAULT_HEAD, LEGACY_HEAD, ...[
+      env.GITHUB_BASE_REF ? `refs/heads/${env.GITHUB_BASE_REF}` : "",
+      /^refs\/(heads|tags)\//.test(env.GITHUB_REF ?? "") ? env.GITHUB_REF : ""
+    ].filter(Boolean)];
+    if ((await git(["-C", target, "config", "core.alternateRefsPrefixes", near.join(" ")])).code !== 0)
+      throw new Error("prepare_failed");
     if ((await git(["-C", target, "update-ref", "--no-deref", "HEAD", head.stdout])).code !== 0)
       throw new Error("prepare_failed");
     seeded = true;
@@ -156,8 +168,10 @@ async function runMain({ env, upstream, openRuntime, saveState, log, now = Date.
   if (code === 0) {
     const repo = target;
     const repacked = await git(["-C", repo, "repack", "-a", "-d", "-q"]);
-    if (repacked.code === 0)
+    if (repacked.code === 0) {
       await fs.rm(path.join(repo, ".git", "objects", "info", "alternates"), { force: true });
+      await git(["-C", repo, "config", "--unset", "core.alternateRefsPrefixes"]);
+    }
     const whole = repacked.code === 0 && (await git(["-C", repo, "fsck", "--connectivity-only", "--no-dangling"])).code === 0;
     if (!whole) {
       await clear(target);
