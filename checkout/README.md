@@ -11,8 +11,10 @@
 - The inputs and outputs are those of `actions/checkout@v4` (v4.3.1, included unchanged in `upstream/`).
 - On a XenoCI runner the organization keeps one Git mirror per repository on a sticky disk. The first run fetches as
   usual; later runs fetch only the commits the mirror does not have.
-- Only runs of the default branch triggered by `push`, `schedule` or `workflow_dispatch` update the mirror. Pull
-  requests and other branches read it and never write to it.
+- The mirror holds every branch and tag. Runs of the repository refresh it, same-repository pull requests too; pull
+  requests from forks only read it. With sticky disk branch protection on (organization cache settings), only `push`,
+  `schedule` and `workflow_dispatch` runs of the default branch refresh it. A mirror whose branches and tags did not move
+  is not saved again.
 - A mirror unused for 7 days is deleted. Mirrors are stored and billed like sticky disks.
 - No mirror, no room for one, or any mirror error: the step does a normal `actions/checkout@v4` checkout and the job
   continues. `ssh-key`, `filter`, another repository or another GitHub server always use the normal checkout.
