@@ -226,14 +226,6 @@ async function dockerCommand(args, { input, output, env = process.env } = {}) {
   }
   return stdout.trim();
 }
-async function defaultBuildkitConfig(env) {
-  const dir = env.BUILDX_CONFIG || (env.DOCKER_CONFIG ? `${env.DOCKER_CONFIG}/buildx` : env.HOME ? `${env.HOME}/.docker/buildx` : null);
-  if (!dir || !dir.startsWith("/"))
-    return null;
-  const file = `${dir}/buildkitd.default.toml`;
-  const info = await fs2.promises.lstat(file).catch(() => null);
-  return info?.isFile() ? file : null;
-}
 function createGuestDocker({ run = dockerCommand, env = process.env, platform = process.platform, resolve = lookup } = {}) {
   const command = (args, io) => run(args, { env, ...io });
   const inspect = async (kind, name) => JSON.parse(await command([kind, "inspect", name]))[0];
@@ -316,7 +308,6 @@ function createGuestDocker({ run = dockerCommand, env = process.env, platform = 
       }
     }
     if (s.block) {
-      const config = await defaultBuildkitConfig(env);
       await command([
         "run",
         "-d",
@@ -327,7 +318,6 @@ function createGuestDocker({ run = dockerCommand, env = process.env, platform = 
         "--privileged",
         "--mount",
         `type=bind,src=${s.block.mount},dst=/var/lib/buildkit`,
-        ...config ? ["--mount", `type=bind,src=${config},dst=/etc/buildkit/buildkitd.toml,readonly`] : [],
         ...["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"].filter((k) => env[k]).flatMap((k) => ["--env", `${k}=${proxyEnv[k]}`]),
         s.buildkitImage,
         "--oci-worker-snapshotter=native"
