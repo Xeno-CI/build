@@ -1,8 +1,6 @@
-개발 미리보기, 아직 공개 출시 아님 (Development preview, not a public release)
-
 # XenoCI Checkout
 
-`actions/checkout@v4` with a cached Git mirror on XenoCI macOS runners.
+`actions/checkout@v4` with a cached Git mirror on XenoCI macOS and Linux runners.
 
 ```yaml
 - uses: Xeno-CI/build/checkout@<commit sha>
