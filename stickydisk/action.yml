@@ -7,6 +7,10 @@ inputs:
   path:
     description: 디스크를 붙일 경로(작업 폴더 기준 상대 경로나 절대 경로, ~/ 사용 가능)
     required: true
+  commit:
+    description: 저장 조건 true(기본, 모든 단계가 통과한 잡), false(저장 안 함), on-change(내용이 바뀌었을 때만), if-missing(한 번도 저장 안 된 디스크만)
+    required: false
+    default: "true"
 runs:
   using: node24
   main: index.mjs
