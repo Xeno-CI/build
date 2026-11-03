@@ -1,8 +1,11 @@
 # xenoci
 
-XenoCI 맥 VM 에서 macOS 빌드와 테스트를 돌리는 CLI 예요, AI 에이전트도 이 CLI 를 직접 써요
+XenoCI 의 리눅스 VM 과 맥 VM 에서 빌드와 테스트를 돌리는 CLI 예요, AI 에이전트도 이 CLI 를 직접 써요
 
-- 얼리빌드: 푸시하기 전에 로컬 변경을 XenoCI 맥에서 빌드하고 테스트해요, 바뀐 파일만 올라가고 종료 코드가 그대로 돌아와요
+`xci` 는 `xenoci` 의 짧은 이름이에요, `npx xci earlybuild ls` 처럼 같은 명령으로 동작해요
+
+- 얼리빌드: 푸시하기 전에 로컬 변경을 XenoCI 리눅스(기본 2코어) 나 맥에서 빌드하고 테스트해요, 바뀐 파일만 올라가고 종료 코드가 그대로 돌아와요
+- 루프: 실패하면 고칠 파일, 줄, 오류를 요약해 돌려주고, 고친 뒤 다시 부르면 같은 세션에서 다시 빌드해요
 - 에이전트 스킬: Claude Code, Codex, OmO 에 명령 목록, 오류 코드와 다음 행동, 얼리빌드 사용법을 담은 스킬 파일을 써 줘요
 
 Node 18 이상이 필요해요
@@ -18,7 +21,7 @@ Node 18 이상이 필요해요
 
    환경 변수 `XENOCI_API_KEY` 가 있으면 저장된 키보다 우선해요
 
-3. 저장소 폴더에서 얼리빌드 워크플로를 만들어요, `--workflow` 에 지금 쓰는 워크플로 파일, `--job` 에 그 안의 맥 잡 이름을 넣어요
+3. 저장소 폴더에서 얼리빌드 워크플로를 만들어요, `--workflow` 에 지금 쓰는 워크플로 파일, `--job` 에 그 안의 맥 잡이나 Ubuntu 잡 이름을 넣어요, Ubuntu 잡은 리눅스 2코어(`xenoci-2vcpu-ubuntu-2404`)에서 돌아요
 
    ```sh
    npx xenoci earlybuild init --workflow .github/workflows/ci.yml --job build --write --contract-version 1
@@ -43,6 +46,19 @@ npx xenoci earlybuild ls --contract-version 1
 npx xenoci earlybuild down --id <세션 ID> --request-id <UUID> --contract-version 1
 ```
 
+리눅스 크기는 `--runner` 로 골라요, `linux` 는 2코어이고 `xenoci-4vcpu-ubuntu-2404` 처럼 더 큰 크기도 돼요
+
+```sh
+npx xenoci earlybuild run --runner linux "npm test"
+npx xenoci earlybuild run --runner xenoci-4vcpu-ubuntu-2404 "cargo test"
+```
+
+루프는 세션 하나로 빌드를 되풀이해요, 통과하면 0, 실패하면 오류 요약과 종료 코드 10(고쳐서 다시 부르기)을 돌려주고, 같은 오류 3번이면 11, `--max` 에 닿으면 12, `--budget`(원) 에 닿으면 13 으로 멈춰요
+
+```sh
+npx xci loop --cmd "swift test" --max 10 --budget 3000
+```
+
 GitHub Actions 잡, 로그, 캐시, 사용량은 API 키(`XENOCI_API_KEY`)로 이렇게 봐요, 출력은 기본 JSON 이고 `--format table` 이나 `--format yaml` 도 돼요
 
 ```sh
@@ -56,7 +72,10 @@ npx xenoci cache list --repo owner/app --format table
 npx xenoci stickydisk list --repo owner/app
 npx xenoci usage --since 30d --breakdown-by runner_type,repo
 npx xenoci runners catalog --format table
+npx xenoci runners suggest --repo owner/app
 ```
+
+`runners suggest` 는 최근 7일 기록으로 크기를 바꾸면 좋은 잡만 보여 줘요(지금 크기, 추천 크기, 분당 요금 차이와 근거)
 
 오류 코드 설명은 https://xenoci.com/errors 에 있어요
 
