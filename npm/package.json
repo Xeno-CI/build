@@ -1,6 +1,6 @@
 {
   "name": "xenoci",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "XenoCI CLI: run builds, tests and earlybuild sessions on XenoCI Linux and Mac VMs",
   "keywords": [
     "xenoci",
