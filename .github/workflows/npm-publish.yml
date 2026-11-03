@@ -1,0 +1,30 @@
+name: npm-publish
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@^11.5.1
+      - name: Tag, npm/package.json and bundle versions match
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./npm/package.json').version")
+          BUNDLE_VERSION=$(node dist/xenoci.mjs --version)
+          echo "tag=$TAG_VERSION npm/package.json=$PKG_VERSION dist/xenoci.mjs=$BUNDLE_VERSION"
+          test "$TAG_VERSION" = "$PKG_VERSION"
+          test "$TAG_VERSION" = "$BUNDLE_VERSION"
+      - run: mkdir -p npm/dist && cp dist/xenoci.mjs npm/dist/xenoci.mjs
+      - run: npm publish --provenance --access public
+        working-directory: npm
