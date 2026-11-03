@@ -71,3 +71,5 @@ jobs:
           api-key: ${{ secrets.XENOCI_API_KEY }}
           script: ./ci.sh
 ```
+
+변경 내역은 [Releases](https://github.com/Xeno-CI/build/releases)에 있습니다
