@@ -1,0 +1,29 @@
+# XenoCI sticky disk delete (bs-small-gaps 2026-11-03, GAP 11): deletes sticky disks of the workflow's repository from a
+# step, with the same input names as the reference product's stickydisk-delete action (delete-key, delete-docker-cache).
+# Authentication is an existing XenoCI API key (admin or normal key; a read key gets 403), the same DELETE
+# /api/runner/v1/stickydisks route as `xenoci stickydisk delete`: the server checks the key's organization and audits each delete.
+name: XenoCI sticky disk delete
+description: Delete sticky disks of this repository on XenoCI by key, or its Docker builder cache
+inputs:
+  delete-key:
+    description: Sticky disk key to delete (exact match, every architecture)
+    required: false
+    default: ''
+  delete-docker-cache:
+    description: "true deletes this repository's Docker builder cache disks (Xeno-CI/build/docker-builder)"
+    required: false
+    default: 'false'
+  api-key:
+    description: "XenoCI API key (admin or normal key, repository secret XENOCI_API_KEY)"
+    required: true
+  api-url:
+    description: XenoCI API address
+    default: https://xenoci.com
+outputs:
+  deleted:
+    description: Number of sticky disks deleted
+  deleted-bytes:
+    description: Bytes those disks held
+runs:
+  using: node24
+  main: index.mjs
