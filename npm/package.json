@@ -1,10 +1,11 @@
 {
   "name": "xenoci",
   "version": "1.8.0",
-  "description": "XenoCI CLI: run macOS builds and earlybuild sessions on XenoCI Mac VMs",
+  "description": "XenoCI CLI: run builds, tests and earlybuild sessions on XenoCI Linux and Mac VMs",
   "keywords": [
     "xenoci",
     "macos",
+    "linux",
     "ci",
     "xcode",
     "github-actions"
