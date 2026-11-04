@@ -1,4 +1,0 @@
-# prtrain build settings (docs: xenoci docs/prtrain/BUILD-SETTINGS.md)
-build:
-  machine: xenoci-standard
-  concurrency: 2
